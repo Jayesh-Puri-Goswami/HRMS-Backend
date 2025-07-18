@@ -9,56 +9,56 @@ router.use(authController.protect);
 
 // For Employees
 
-router.get('/check-in', authController.restrictTo('Employee', 'Management','TeamLead'), AttendanceController.checkIn);
+router.get('/check-in', authController.restrictTo('Employee', 'Management','TeamLead','HR'), AttendanceController.checkIn);
 
 router.get(
   '/check-out',
-  authController.restrictTo('Employee', 'Management','TeamLead'),
+  authController.restrictTo('Employee', 'Management','TeamLead','HR'),
   AttendanceController.checkOut
 );
 
 router.get(
   '/pauseTracker',
-  authController.restrictTo('Employee', 'Management','TeamLead'),
+  authController.restrictTo('Employee', 'Management','TeamLead','HR'),
   AttendanceController.pauseTracker
 );
 router.get(
   '/resumeTracker',
-  authController.restrictTo('Employee', 'Management','TeamLead'),
+  authController.restrictTo('Employee', 'Management','TeamLead','HR'),
   AttendanceController.resumeTracker
 );
 
 router.get(
   '/startLunch',
-  authController.restrictTo('Employee', 'Management','TeamLead'),
+  authController.restrictTo('Employee', 'Management','TeamLead','HR'),
   AttendanceController.startLunch
 );
 router.get(
   '/endLunch',
-  authController.restrictTo('Employee', 'Management','TeamLead'),
+  authController.restrictTo('Employee', 'Management','TeamLead','HR'),
   AttendanceController.endLunch
 );
 router.get(
   '/startBreak',
-  authController.restrictTo('Employee', 'Management','TeamLead'),
+  authController.restrictTo('Employee', 'Management','TeamLead','HR'),
   AttendanceController.startBreak
 );
 router.get(
   '/endBreak',
-  authController.restrictTo('Employee', 'Management','TeamLead'),
+  authController.restrictTo('Employee', 'Management','TeamLead','HR'),
   AttendanceController.endBreak
 );
 
 
 router.get(
-  '/attendance',
+  '/attendance',  
   authController.restrictTo('Employee', 'Management','TeamLead'),
   AttendanceController.getEmployeeAttendance
 );
 
 router.get(
   '/today/attendance',
-  authController.restrictTo('Employee', 'Management','TeamLead'),
+  authController.restrictTo('Employee', 'Management','TeamLead','HR'),
   AttendanceController.getEmployeeTodayAttendance
 );
 

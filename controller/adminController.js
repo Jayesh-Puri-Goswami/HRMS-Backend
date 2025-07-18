@@ -133,9 +133,10 @@ exports.updateMe = catchAsync(async (req, res, next) => {
 
 exports.getAllEmployeeCount = catchAsync(async (req, res, next) => {
   try {
-    let getAllEmployeeCount = await User.find({ role: { $ne: "Admin" } });
+    const totalCount = await User.countDocuments({ role: { $ne: 'Admin' } });
+
     res.status(200).json({
-      count: getAllEmployeeCount.length,
+      count: totalCount,
     });
   } catch (err) {
     console.error(err);
@@ -149,26 +150,32 @@ exports.getEmployeeCountsByType = catchAsync(async (req, res, next) => {
     const employeeCounts = await User.aggregate([
       {
         $match: {
-          role: { $ne: 'Admin' }, 
+          role: { $ne: 'Admin' }
         },
       },
       {
         $group: {
-          _id: "$employementType",
-          count: { $sum: 1 }, 
+          _id: '$employementType',
+          count: { $sum: 1 }
         },
       },
+      {
+        $sort: { _id: 1 } 
+      }
     ]);
 
     res.status(200).json({
       success: true,
-      data: employeeCounts,
+      total: employeeCounts.reduce((sum, type) => sum + type.count, 0), // total = 68
+      data: employeeCounts
     });
   } catch (err) {
     console.error(err);
     return next(new AppError("Error retrieving employee counts", 500));
   }
 });
+
+
 
 
 exports.updateData = catchAsync(async (req, res, next) => {

@@ -2,7 +2,6 @@ const express = require('express');
 const authController = require('../../controller/AuthController');
 const dashboardController = require('../../controller/dashboardController')
 
-
 const router = express.Router();
 
 // Protect all routes after this middleware

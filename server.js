@@ -23,7 +23,7 @@ mongoose
   .then(() => {
     console.log('DB connection successful!');
     // Now safely call the setupCronJobs
-    setupCronJobs();
+    // setupCronJobs();
   });
 
 const port = process.env.PORT || 8084;

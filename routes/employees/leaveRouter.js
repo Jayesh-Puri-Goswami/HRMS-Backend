@@ -1,7 +1,7 @@
 const express = require('express');
 const authController = require('../../controller/AuthController');
 const LeaveController = require("../../controller/leaveController");
-
+const Controller = require('../../controller/paidLeaveController');
 const router = express.Router();
 
 
@@ -10,6 +10,9 @@ router.use(authController.protect);
 
 router.get('/get-All/leave-request', LeaveController.getEmployeeLeaveRequest);
 router.get('/get/leave-request/:id', LeaveController.getLeaveRequestById);
+
+router.get('/get/employees/paidLeaves/:id', authController.restrictTo('HR','Employee', 'Management','TeamLead'), Controller.getEmployeePaidLeaveById);
+
 router.post(
   '/create/leave-request',
   authController.restrictTo('Employee', 'Management','TeamLead'),

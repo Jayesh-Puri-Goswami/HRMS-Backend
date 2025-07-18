@@ -6,25 +6,7 @@ const moment = require('moment');
 const leavesModel = require('../model/leaves.model');
 
 // For Employee
-// exports.getEmployeePaidLeave = catchAsync(async (req, res) => {
-//   const employeeId = req.user._id;
 
-//   try {
-//     const leaveData = await AvailableLeave.findOne({ employeeId });
-
-//     if (!leaveData) {
-//       return res
-//         .status(404)
-//         .json({ message: 'Leave data not found for the provided employeeId.' });
-//     }
-
-//     res.json({
-//       leaveBalance: leaveData,
-//     });
-//   } catch (err) {
-//     res.status(500).json({ message: err.message });
-//   }
-// });
 
 exports.getEmployeePaidLeave = catchAsync(async (req, res) => {
   const employeeId = req.user._id;

@@ -12,6 +12,8 @@ const Shift = require('../model/shift.model');
 const User = require('../model/admin.model');
 const HolidaysModel = require('../model/holidays.model');
 
+const DailyTaskList = require('../model/dailyTask.model');
+
 // Calculate total hours
 
 //--------------------------------- For Management -------------------------//
@@ -123,7 +125,6 @@ exports.getAttendanceByID = catchAsync(async (req, res, next) => {
   const employeeId = req.params.id;
 
   console.log(`Employee ID ${employeeId}`);
-  
 
   const startOfMonth = moment().startOf('month').startOf('day').toDate();
   const endOfMonth = moment().endOf('month').endOf('day').toDate();
@@ -195,11 +196,12 @@ exports.updateAttendanceById = catchAsync(async (req, res, next) => {
     if (checkInTime) attendance.checkInTime = new Date(checkInTime);
     if (status) {
       attendance.status = status;
-      attendance.leaveStatus = status === 'present'
-        ? 'working'
-        : status === 'halfDay'
-        ? 'halfDay'
-        : 'absent';
+      attendance.leaveStatus =
+        status === 'present'
+          ? 'working'
+          : status === 'halfDay'
+          ? 'halfDay'
+          : 'absent';
     }
 
     // Update check-out & recalculate total hours
@@ -211,7 +213,8 @@ exports.updateAttendanceById = catchAsync(async (req, res, next) => {
         attendance.checkOutTime
       );
 
-      const adjustedMinutes = hours * 60 + minutes - (attendance.totalPausedMinutes || 0);
+      const adjustedMinutes =
+        hours * 60 + minutes - (attendance.totalPausedMinutes || 0);
       const finalHours = Math.floor(adjustedMinutes / 60);
       const finalMinutes = adjustedMinutes % 60;
 
@@ -219,7 +222,8 @@ exports.updateAttendanceById = catchAsync(async (req, res, next) => {
       attendance.totalMinutes = adjustedMinutes;
 
       if (attendance.leaveStatus !== 'absent') {
-        attendance.leaveStatus = status === 'halfDay' ? 'halfDay' : 'out of working';
+        attendance.leaveStatus =
+          status === 'halfDay' ? 'halfDay' : 'out of working';
       }
     }
 
@@ -238,7 +242,7 @@ exports.updateAttendanceById = catchAsync(async (req, res, next) => {
 
 exports.getEmployeeStats = catchAsync(async (req, res, next) => {
   const employeeId = req.params.id;
-  
+
   if (!employeeId) {
     return next(new AppError('Employee ID is required', 400));
   }
@@ -246,10 +250,10 @@ exports.getEmployeeStats = catchAsync(async (req, res, next) => {
   try {
     // Get current date
     const currentDate = moment().startOf('day');
-    
+
     // Calculate date 30 days ago for averages
     const thirtyDaysAgo = moment().subtract(30, 'days').startOf('day');
-    
+
     // Calculate date 10 days ago for recent attendance
     const tenDaysAgo = moment().subtract(10, 'days').startOf('day');
 
@@ -257,13 +261,13 @@ exports.getEmployeeStats = catchAsync(async (req, res, next) => {
     const attendanceRecords = await AttendanceModel.find({
       employeeId: employeeId,
       date: { $gte: thirtyDaysAgo.toDate(), $lte: currentDate.toDate() },
-      status: 'present' // Only consider days when employee was present
+      status: 'present', // Only consider days when employee was present
     }).sort({ date: -1 });
 
     // Fetch last 10 days attendance records
     const recentAttendance = await AttendanceModel.find({
       employeeId: employeeId,
-      date: { $gte: tenDaysAgo.toDate(), $lte: currentDate.toDate() }
+      date: { $gte: tenDaysAgo.toDate(), $lte: currentDate.toDate() },
     }).sort({ date: -1 });
 
     // Calculate statistics
@@ -273,58 +277,73 @@ exports.getEmployeeStats = catchAsync(async (req, res, next) => {
     let checkOutTimes = [];
     let validRecordsCount = 0;
 
-    attendanceRecords.forEach(record => {
+    attendanceRecords.forEach((record) => {
       // Only include records with both check-in and check-out times
       if (record.checkInTime && record.checkOutTime) {
         validRecordsCount++;
-        
+
         // Add check-in and check-out times to arrays for averaging
         checkInTimes.push(moment(record.checkInTime));
         checkOutTimes.push(moment(record.checkOutTime));
-        
+
         // Add total working minutes
         totalWorkingMinutes += record.totalMinutes || 0;
-        
+
         // Add break minutes (lunch + break)
-        const breakMins = (record.lunchMinutes || 0) + (record.breakMinutes || 0);
+        const breakMins =
+          (record.lunchMinutes || 0) + (record.breakMinutes || 0);
         totalBreakMinutes += breakMins;
       }
     });
 
     // Calculate averages
-    const avgWorkingMinutes = validRecordsCount > 0 ? totalWorkingMinutes / validRecordsCount : 0;
-    const avgBreakMinutes = validRecordsCount > 0 ? totalBreakMinutes / validRecordsCount : 0;
-    
+    const avgWorkingMinutes =
+      validRecordsCount > 0 ? totalWorkingMinutes / validRecordsCount : 0;
+    const avgBreakMinutes =
+      validRecordsCount > 0 ? totalBreakMinutes / validRecordsCount : 0;
+
     // Calculate average check-in and check-out times
     let avgCheckInTime = null;
     let avgCheckOutTime = null;
-    
+
     if (checkInTimes.length > 0) {
       // Convert all times to minutes since midnight for averaging
-      const checkInMinutes = checkInTimes.map(time => time.hours() * 60 + time.minutes());
-      const avgCheckInMinutes = checkInMinutes.reduce((sum, mins) => sum + mins, 0) / checkInMinutes.length;
-      
+      const checkInMinutes = checkInTimes.map(
+        (time) => time.hours() * 60 + time.minutes()
+      );
+      const avgCheckInMinutes =
+        checkInMinutes.reduce((sum, mins) => sum + mins, 0) /
+        checkInMinutes.length;
+
       // Convert back to time format
       const hours = Math.floor(avgCheckInMinutes / 60);
       const minutes = Math.round(avgCheckInMinutes % 60);
-      avgCheckInTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+      avgCheckInTime = `${hours.toString().padStart(2, '0')}:${minutes
+        .toString()
+        .padStart(2, '0')}`;
     }
-    
+
     if (checkOutTimes.length > 0) {
       // Convert all times to minutes since midnight for averaging
-      const checkOutMinutes = checkOutTimes.map(time => time.hours() * 60 + time.minutes());
-      const avgCheckOutMinutes = checkOutMinutes.reduce((sum, mins) => sum + mins, 0) / checkOutMinutes.length;
-      
+      const checkOutMinutes = checkOutTimes.map(
+        (time) => time.hours() * 60 + time.minutes()
+      );
+      const avgCheckOutMinutes =
+        checkOutMinutes.reduce((sum, mins) => sum + mins, 0) /
+        checkOutMinutes.length;
+
       // Convert back to time format
       const hours = Math.floor(avgCheckOutMinutes / 60);
       const minutes = Math.round(avgCheckOutMinutes % 60);
-      avgCheckOutTime = `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+      avgCheckOutTime = `${hours.toString().padStart(2, '0')}:${minutes
+        .toString()
+        .padStart(2, '0')}`;
     }
 
     // Format average working hours
     const avgWorkingHours = Math.floor(avgWorkingMinutes / 60);
     const avgWorkingMins = Math.round(avgWorkingMinutes % 60);
-    
+
     // Prepare response
     const response = {
       employeeId,
@@ -333,23 +352,33 @@ exports.getEmployeeStats = catchAsync(async (req, res, next) => {
         averageWorkingMinutes: avgWorkingMinutes,
         averageCheckInTime: avgCheckInTime,
         averageCheckOutTime: avgCheckOutTime,
-        averageBreakTime: `${Math.floor(avgBreakMinutes / 60)}h:${Math.round(avgBreakMinutes % 60)} mins`,
+        averageBreakTime: `${Math.floor(avgBreakMinutes / 60)}h:${Math.round(
+          avgBreakMinutes % 60
+        )} mins`,
         averageBreakMinutes: avgBreakMinutes,
-        daysAnalyzed: validRecordsCount
+        daysAnalyzed: validRecordsCount,
       },
-      recentAttendance: recentAttendance.map(record => ({
+      recentAttendance: recentAttendance.map((record) => ({
         date: moment(record.date).format('YYYY-MM-DD'),
         status: record.status,
-        checkInTime: record.checkInTime ? moment(record.checkInTime).format('HH:mm:ss') : null,
-        checkOutTime: record.checkOutTime ? moment(record.checkOutTime).format('HH:mm:ss') : null,
+        checkInTime: record.checkInTime
+          ? moment(record.checkInTime).format('HH:mm:ss')
+          : null,
+        checkOutTime: record.checkOutTime
+          ? moment(record.checkOutTime).format('HH:mm:ss')
+          : null,
         totalHours: record.totalHours,
-        breakTime: `${Math.floor((record.lunchMinutes || 0 + record.breakMinutes || 0) / 60)}h:${Math.round((record.lunchMinutes || 0 + record.breakMinutes || 0) % 60)} mins`,
-      }))
+        breakTime: `${Math.floor(
+          (record.lunchMinutes || 0 + record.breakMinutes || 0) / 60
+        )}h:${Math.round(
+          (record.lunchMinutes || 0 + record.breakMinutes || 0) % 60
+        )} mins`,
+      })),
     };
 
     res.status(200).json({
       status: 'success',
-      data: response
+      data: response,
     });
   } catch (err) {
     console.error(err);
@@ -357,51 +386,6 @@ exports.getEmployeeStats = catchAsync(async (req, res, next) => {
   }
 });
 
-
-
-
-
-
-
-// exports.getAllEmployeeAttendance = catchAsync(async (req, res, next) => {
-//   const { startDate, endDate, employeeName } = req.query;
-//   const page = parseInt(req.query.page) || 1; // Current page number, default is 1
-//   const limit = parseInt(req.query.limit) || 200; // Number of records per page, default is 10
-
-//   const query = {};
-
-//   if (startDate && endDate) {
-//     query.date = {
-//       $gte: moment(startDate).startOf('day').toDate(),
-//       $lte: moment(endDate).endOf('day').toDate(),
-//     };
-//   }
-
-//   if (employeeName) {
-//     query.employeeName = { $regex: employeeName, $options: 'i' };
-//   }
-
-//   try {
-//     const totalRecords = await AttendanceModel.countDocuments(query);
-
-//     const attendanceRecords = await AttendanceModel.find(query)
-//       .sort({ createdAt: -1 })
-//       .populate('employeeId')
-//       .skip((page - 1) * limit) // Skip records based on current page and limit
-//       .limit(limit); // Limit the number of records per page
-
-//     res.status(200).json({
-//       attendanceRecords,
-//       currentPage: page,
-//       totalCount: Math.ceil(totalRecords / limit),
-//     });
-//   } catch (err) {
-//     console.error(err);
-//     return next(new AppError('Error retrieving attendance records', 401));
-//   }
-// });
-
-//--------------------------------- END -----------------------------------//
 
 //--------------------------------- For Employee -------------------------//
 
@@ -418,58 +402,6 @@ function calculateTotalHours(checkInTime, checkOutTime) {
   };
 }
 
-// exports.checkIn = catchAsync(async (req, res, next) => {
-//   const currentDate = moment().startOf('day').toDate();
-//   const checkInTime = new Date();
-//   try {
-//     // Check if there is an existing attendance record for the current day
-//     const existingEmployee = await Employee.findOne({
-//       _id: req.user._id,
-//     });
-
-//     if (!existingEmployee) {
-//       return next(new AppError('Data not found!', 401));
-//     }
-//     const existingAttendance = await AttendanceModel.findOne({
-//       employeeId: req.user._id,
-//       date: currentDate,
-//     });
-
-//     if (existingAttendance) {
-//       return next(
-//         new AppError('Attendance record already exists for today', 401)
-//       );
-//     }
-
-//     // Employee Shift
-//     const shiftId = existingEmployee.shifts;
-
-//     const shift = await Shift.findOne({ _id: shiftId });
-
-//     // Create a new attendance record
-//     const attendance = new AttendanceModel({
-//       employeeId: req.user._id,
-//       employeeName: existingEmployee.name,
-//       date: currentDate,
-//       checkInTime,
-//       totalHours: 0,
-//       status: 'present',
-//       leaveStatus: 'working', // Mark the employee as present by default
-//       shiftId: shift ? shift._id : null,
-//       shiftStartTime: shift ? shift.startTime : null,
-//       shiftEndTime: shift ? shift.endTime : null,
-//       shiftLunchTime: shift ? shift.lunchTime : 0,
-//       shiftBreakTime: shift ? shift.breakTime : 0,
-//     });
-
-//     await attendance.save();
-
-//     res.status(200).json(attendance);
-//   } catch (err) {
-//     console.error(err);
-//     return next(new AppError('Error saving attendance record', 401));
-//   }
-// });
 
 exports.checkIn = catchAsync(async (req, res, next) => {
   const currentDate = moment().startOf('day').toDate();
@@ -487,11 +419,11 @@ exports.checkIn = catchAsync(async (req, res, next) => {
     const existingAttendance = await AttendanceModel.findOne({
       employeeId: req.user._id,
       date: currentDate,
-      status : 'absent',
+      status: 'absent',
     });
-    
-    console.log(`Attendance ${existingAttendance}`)
-    
+
+    console.log(`Attendance ${existingAttendance}`);
+
     if (existingAttendance) {
       return next(
         new AppError('Attendance record already exists for today', 401)
@@ -559,56 +491,13 @@ exports.checkIn = catchAsync(async (req, res, next) => {
   }
 });
 
-//
-// exports.checkOut = catchAsync(async (req, res, next) => {
-//   const currentDate = moment().startOf('day').toDate();
-//   try {
-//     const attendance = await AttendanceModel.findOne({
-//       employeeId: req.user._id,
-//       date: currentDate,
-//       leaveStatus: 'working',
-//     });
-
-//     if (!attendance) {
-//       return next(new AppError('No attendance record found for today', 401));
-//     }
-
-//     if (attendance.checkOutTime) {
-//       return next(
-//         new AppError('Attendance record already has a check-out time', 401)
-//       );
-//     }
-
-//     const checkOutTime = new Date();
-//     attendance.checkOutTime = checkOutTime;
-
-//     const { hours, minutes } = calculateTotalHours(
-//       attendance.checkInTime,
-//       checkOutTime
-//     );
-
-//     attendance.totalHours = `${hours}h:${minutes} mins`;
-//     attendance.leaveStatus = 'out of working';
-
-//     await attendance.save();
-
-//     const formattedTime = moment()
-//       .set({ hours, minutes })
-//       .format('HH[h]:mm[min]');
-
-//     res.status(200).json({ attendance, formattedTime });
-//   } catch (err) {
-//     console.error(err);
-//     return next(new AppError('Error updating attendance record', 401));
-//   }
-// });
 
 exports.checkOut = catchAsync(async (req, res, next) => {
+  
   const currentDate = moment().startOf('day').toDate();
-  try {
 
+  try {
     console.log('working');
-    
 
     const attendance = await AttendanceModel.findOne({
       employeeId: req.user._id,
@@ -682,9 +571,7 @@ exports.checkOut = catchAsync(async (req, res, next) => {
   }
 });
 
-
 // Helper Function to calculate total hours
-
 
 // CheckOut Employees Function Cron Job
 exports.autoCheckOutEmployees = async () => {
@@ -692,67 +579,70 @@ exports.autoCheckOutEmployees = async () => {
 
   // Time according to IST (Kolkata) for 11:55 is ('55 23 * * *')
 
-  cron.schedule('55 23 * * *', async () => {
-    try {
-      const currentDate = moment().startOf('day').toDate()
-      const currentTime = new Date();
+  cron.schedule(
+    '55 23 * * *',
+    async () => {
+      try {
+        const currentDate = moment().startOf('day').toDate();
+        const currentTime = new Date();
 
-      // Find all attendance records where check-in exists but check-out is missing
-      const attendances = await AttendanceModel.find({
-        date: currentDate,
-        checkInTime: { $ne: null },
-        checkOutTime: { $eq: null },
-      });
+        // Find all attendance records where check-in exists but check-out is missing
+        const attendances = await AttendanceModel.find({
+          date: currentDate,
+          checkInTime: { $ne: null },
+          checkOutTime: { $eq: null },
+        });
 
-      console.log(`Auto Checkout Cron Running: Found ${attendances.length} employees to checkout.`);
-
-      for (const attendance of attendances) {
-        attendance.checkOutTime = currentTime;
-
-        // Handle lunch or break still active
-        if (attendance.lunchStart && !attendance.lunchEnd) {
-          let lunchMinutes = (currentTime - attendance.lunchStart) / 60000;
-          attendance.lunchMinutes += Math.round(lunchMinutes);
-          attendance.lunchEnd = currentTime;
-        }
-
-        if (attendance.breakStart && !attendance.breakEnd) {
-          let breakMinutes = (currentTime - attendance.breakStart) / 60000;
-          attendance.breakMinutes += Math.round(breakMinutes);
-          attendance.breakEnd = currentTime;
-        }
-
-        const { hours, minutes } = calculateTotalHours(
-          attendance.checkInTime,
-          currentTime
+        console.log(
+          `Auto Checkout Cron Running: Found ${attendances.length} employees to checkout.`
         );
 
-        const adjustedMinutes =
-          hours * 60 + minutes - (attendance.totalPausedMinutes || 0);
+        for (const attendance of attendances) {
+          attendance.checkOutTime = currentTime;
 
-        const finalHours = Math.floor(adjustedMinutes / 60);
-        const finalMinutes = adjustedMinutes % 60;
+          // Handle lunch or break still active
+          if (attendance.lunchStart && !attendance.lunchEnd) {
+            let lunchMinutes = (currentTime - attendance.lunchStart) / 60000;
+            attendance.lunchMinutes += Math.round(lunchMinutes);
+            attendance.lunchEnd = currentTime;
+          }
 
-        attendance.totalHours = null;
-        attendance.totalMinutes = null;
-        
-        // Only update leaveStatus if it is not 'absent'
-        if (attendance.leaveStatus !== 'absent') {
-          attendance.leaveStatus = 'out of working';
+          if (attendance.breakStart && !attendance.breakEnd) {
+            let breakMinutes = (currentTime - attendance.breakStart) / 60000;
+            attendance.breakMinutes += Math.round(breakMinutes);
+            attendance.breakEnd = currentTime;
+          }
+
+          const { hours, minutes } = calculateTotalHours(
+            attendance.checkInTime,
+            currentTime
+          );
+
+          const adjustedMinutes =
+            hours * 60 + minutes - (attendance.totalPausedMinutes || 0);
+
+          const finalHours = Math.floor(adjustedMinutes / 60);
+          const finalMinutes = adjustedMinutes % 60;
+
+          attendance.totalHours = null;
+          attendance.totalMinutes = null;
+
+          // Only update leaveStatus if it is not 'absent'
+          if (attendance.leaveStatus !== 'absent') {
+            attendance.leaveStatus = 'out of working';
+          }
+
+          await attendance.save();
         }
 
-        await attendance.save();
+        console.log(`Auto Checkout Cron Completed.`);
+      } catch (err) {
+        console.error('Error in Auto Checkout Cron:', err);
       }
-
-      console.log(`Auto Checkout Cron Completed.`);
-
-    } catch (err) {
-      console.error('Error in Auto Checkout Cron:', err);
-    }
-  }, { timezone : 'Asia/Kolkata' });
+    },
+    { timezone: 'Asia/Kolkata' }
+  );
 };
-
-
 
 exports.pauseTracker = catchAsync(async (req, res, next) => {
   const currentDate = moment().startOf('day').toDate();
@@ -1003,511 +893,312 @@ exports.getEmployeeTodayAttendance = catchAsync(async (req, res, next) => {
 
 //----------------------------------------- Cron JOB -----------------------------------//
 
-// exports.sendEmail_MorningShift = catchAsync(async (req, res, next) => {
-//   // Morning shift cron job
-//   cron.schedule('30 7 * * *', async () => {
-//     const employees = await Employee.find({ role: 'Employee' });
-//     const morningShiftEmployees = employees.filter(
-//       (employee) => employee.shifts === 'Morning'
-//     );
-
-//     const currentDate = moment().startOf('day').toDate();
-
-//     for (const employee of morningShiftEmployees) {
-//       const attendanceRecord = await AttendanceModel.findOne({
-//         employeeId: employee._id,
-//         date: currentDate,
-//       });
-
-//       if (!attendanceRecord || !attendanceRecord.checkInTime) {
-//         console.log(`Sending email to ${employee.name}`);
-//         new Email(employee, '').sendCheckInEmail();
-//       } else {
-//         console.log(`Check in  ${employee.name}`);
-//       }
-//     }
-//   });
-// });
-
-// exports.markingAbsent_MorningShift = catchAsync(async (req, res, next) => {
-//   // Morning shift cron job
-//   cron.schedule('30 8 * * *', async () => {
-//     const employees = await Employee.find({ role: 'Employee' });
-//     const morningShiftEmployees = employees.filter(
-//       (employee) => employee.shifts === 'Morning'
-//     );
-
-//     const currentDate = moment().startOf('day').toDate();
-//     // const checkInDeadline = moment().startOf('day').add(8, 'hours').toDate();
-
-//     for (const employee of morningShiftEmployees) {
-//       const attendanceRecord = await AttendanceModel.findOne({
-//         employeeId: employee._id,
-//         date: currentDate,
-//       });
-//       if (!attendanceRecord || !attendanceRecord.checkInTime) {
-//         console.log(`Marking ${employee.name} as absent`);
-//         // Create a new attendance record for absent employees
-//         const newAttendanceRecord = new AttendanceModel({
-//           employeeId: employee._id,
-//           employeeName: employee.name,
-//           date: currentDate,
-//           checkInTime: null,
-//           checkOutTime: null,
-//           totalHours: '0h:0 mins',
-//           status: 'absent',
-//           leaveStatus: 'leave',
-//         });
-//         await newAttendanceRecord.save();
-//       } else {
-//         console.log(`Check-in recorded for ${employee.name}`);
-//       }
-//     }
-//   });
-// });
-
-// exports.sendEmail_GeneralShift = catchAsync(async (req, res, next) => {
-//   // Morning shift cron job
-//   cron.schedule('30 9 * * *', async () => {
-//     const employees = await Employee.find({ role: 'Employee' })
-
-//     const morningShiftEmployees = employees.filter(
-//       (employee) => employee.shifts === 'General'
-//     );
-
-//     const currentDate = moment().startOf('day').toDate();
-
-//     for (const employee of morningShiftEmployees) {
-//       const attendanceRecord = await AttendanceModel.findOne({
-//         employeeId: employee._id,
-//         date: currentDate,
-//       });
-
-//       if (!attendanceRecord || !attendanceRecord.checkInTime) {
-//         console.log(`Sending email to ${employee.name}`);
-//         new Email(employee, '').sendCheckInEmail();
-//       } else {
-//         console.log(`Check in  ${employee.name}`);
-//       }
-//     }
-//   });
-// });
-
-// exports.markingAbsent_GeneralShift = catchAsync(async (req, res, next) => {
-//   // Morning shift cron job
-//   cron.schedule('30 10 * * *', async () => {
-//     const employees = await Employee.find({ role: 'Employee' });
-//     const generalShiftEmployees = employees.filter(
-//       (employee) => employee.shifts === 'General'
-//     );
-
-//     const currentDate = moment().startOf('day').toDate();
-//     // const checkInDeadline = moment().startOf('day').add(8, 'hours').toDate();
-
-//     for (const employee of generalShiftEmployees) {
-//       const attendanceRecord = await AttendanceModel.findOne({
-//         employeeId: employee._id,
-//         date: currentDate,
-//       });
-
-//       if (!attendanceRecord || !attendanceRecord.checkInTime) {
-//         console.log(`Marking ${employee.name} as absent`);
-//         // Create a new attendance record for absent employees
-//         const newAttendanceRecord = new AttendanceModel({
-//           employeeId: employee._id,
-//           employeeName: employee.name,
-//           date: currentDate,
-//           checkInTime: null,
-//           checkOutTime: null,
-//           totalHours: '0h:0 mins',
-//           status: 'absent',
-//           leaveStatus: 'leave',
-//         });
-//         await newAttendanceRecord.save();
-//       } else {
-//         console.log(`Check-in recorded for ${employee.name}`);
-//       }
-//     }
-//   });
-// });
-
-// exports.sendEmail_EveningShift = catchAsync(async (req, res, next) => {
-//   // evening shift cron job
-//   cron.schedule('30 15 * * *', async () => {
-//     const employees = await Employee.find({ role: 'Employee' })
-//     const morningShiftEmployees = employees.filter(
-//       (employee) => employee.shifts === 'Evening'
-//     );
-
-//     const currentDate = moment().startOf('day').toDate();
-
-//     for (const employee of morningShiftEmployees) {
-//       const attendanceRecord = await AttendanceModel.findOne({
-//         employeeId: employee._id,
-//         date: currentDate,
-//       });
-
-//       if (!attendanceRecord || !attendanceRecord.checkInTime) {
-//         console.log(`Sending email to ${employee.name}`);
-//         new Email(employee, '').sendCheckInEmail();
-//       } else {
-//         console.log(`Check in  ${employee.name}`);
-//       }
-//     }
-//   });
-// });
-
-// exports.markingAbsent_EveningShift = catchAsync(async (req, res, next) => {
-//   // Morning shift cron job
-//   cron.schedule('30 16 * * *', async () => {
-//     const employees = await Employee.find({ role: 'Employee' });
-//     const generalShiftEmployees = employees.filter(
-//       (employee) => employee.shifts === 'Evening'
-//     );
-
-//     const currentDate = moment().startOf('day').toDate();
-//     // const checkInDeadline = moment().startOf('day').add(8, 'hours').toDate();
-
-//     for (const employee of generalShiftEmployees) {
-//       const attendanceRecord = await AttendanceModel.findOne({
-//         employeeId: employee._id,
-//         date: currentDate,
-//       });
-
-//       if (!attendanceRecord || !attendanceRecord.checkInTime) {
-//         console.log(`Marking ${employee.name} as absent`);
-//         // Create a new attendance record for absent employees
-//         const newAttendanceRecord = new AttendanceModel({
-//           employeeId: employee._id,
-//           employeeName: employee.name,
-//           date: currentDate,
-//           checkInTime: null,
-//           checkOutTime: null,
-//           totalHours: '0h:0 mins',
-//           status: 'absent',
-//           leaveStatus: 'leave',
-//         });
-//         await newAttendanceRecord.save();
-//       } else {
-//         console.log(`Check-in recorded for ${employee.name}`);
-//       }
-//     }
-//   });
-// });
 
 exports.handleEmailAlert = async (shiftId, cronTime) => {
-  cron.schedule(cronTime, async () => {
-    console.log('📧 Email alert cron job running...');
+  cron.schedule(
+    cronTime,
+    async () => {
+      console.log('📧 Email alert cron job running...');
 
-    const employees = await Employee.find({ role: 'Employee' });
+      const employees = await Employee.find({ role: 'Employee' });
 
-    // Correct filter with ObjectId toString comparison
-    const shiftEmployees = employees.filter((employee) => {
-      return employee.shifts && employee.shifts.toString() === shiftId.toString();
-    });
-
-    console.log(`Shift Employees found for email alert: ${shiftEmployees.length}`);
-
-    const currentDate = moment().startOf('day').toDate();
-    const currentDay = moment().format('dddd').toLowerCase();
-
-
-
-    for (const employee of shiftEmployees) {
-      const attendanceRecord = await AttendanceModel.findOne({
-        employeeId: employee._id,
-        date: currentDate,
+      // Correct filter with ObjectId toString comparison
+      const shiftEmployees = employees.filter((employee) => {
+        return (
+          employee.shifts && employee.shifts.toString() === shiftId.toString()
+        );
       });
 
-      if (currentDay === 'saturday' || currentDay === 'sunday') {
-        reason = 'weekend';
-        console.log(
-          `Weekend: ${currentDay}. No action taken for ${employee.name}`
-        );
-        continue;
-      }
+      console.log(
+        `Shift Employees found for email alert: ${shiftEmployees.length}`
+      );
 
-      if (!attendanceRecord || !attendanceRecord.checkInTime) {
-        console.log(`Sending check-in reminder email to: ${employee.name}`);
-        await new Email(employee, '').sendCheckInEmail(); // Added await for sending email
-      } else {
-        console.log(`Already checked in: ${employee.name}`);
+      const currentDate = moment().startOf('day').toDate();
+      const currentDay = moment().format('dddd').toLowerCase();
+
+      for (const employee of shiftEmployees) {
+        const attendanceRecord = await AttendanceModel.findOne({
+          employeeId: employee._id,
+          date: currentDate,
+        });
+
+        if (currentDay === 'saturday' || currentDay === 'sunday') {
+          reason = 'weekend';
+          console.log(
+            `Weekend: ${currentDay}. No action taken for ${employee.name}`
+          );
+          continue;
+        }
+
+        if (!attendanceRecord || !attendanceRecord.checkInTime) {
+          console.log(`Sending check-in reminder email to: ${employee.name}`);
+          await new Email(employee, '').sendCheckInEmail(); // Added await for sending email
+        } else {
+          console.log(`Already checked in: ${employee.name}`);
+        }
       }
-    }
-  },{ timezone : 'Asia/Kolkata' });
+    },
+    { timezone: 'Asia/Kolkata' }
+  );
 };
 
 exports.handleAbsentMarking = async (shift, cronTime) => {
+  cron.schedule(
+    cronTime,
+    async () => {
+      console.log('Absent marking cron job running...');
 
-  cron.schedule(cronTime, async () => {
+      const employees = await Employee.find({ role: 'Employee' });
 
-    console.log('Absent marking cron job running...');
+      // const shiftEmployees = employees.filter(
+      //   (employee) => {
+      //     employee.shifts === shift
+      //     // console.log("Shift Employees: ", employee.shifts);
+      //     console.log('Shift Employees: ', employee.shifts);
+      //     return employee.shifts
+      //   }
+      // );
 
-    const employees = await Employee.find({ role: 'Employee' });
-    
-    // const shiftEmployees = employees.filter(
-    //   (employee) => {
-    //     employee.shifts === shift
-    //     // console.log("Shift Employees: ", employee.shifts);
-    //     console.log('Shift Employees: ', employee.shifts);
-    //     return employee.shifts
-    //   }
-    // );
-
-    const shiftEmployees = employees.filter((employee) => {
-           return employee.shifts && employee.shifts.toString() === shift.toString();
-    });
-    
-    const currentDate = moment().startOf('day').toDate();
-    const currentDay = moment().format('dddd').toLowerCase(); // e.g., 'sunday'
-
-
-    for (const employee of shiftEmployees) {
-      const attendanceRecord = await AttendanceModel.findOne({
-        employeeId: employee._id,
-        date: currentDate,
-      });
-
-
-
-      // if (!attendanceRecord || !attendanceRecord.checkInTime) {
-      //   console.log(`Marking ${employee.name} as absent`);
-      //   const newAttendanceRecord = new AttendanceModel({
-      //     employeeId: employee._id,
-      //     employeeName: employee.name,
-      //     date: currentDate,
-      //     checkInTime: null,
-      //     checkOutTime: null,
-      //     totalHours: '0h:0 mins',
-      //     status: 'absent',
-      //     leaveStatus: 'leave',
-      //   });
-
-      //   await newAttendanceRecord.save();
-      // } else {
-      //   console.log(`Check-in recorded for ${employee.name}`);
-      // }
-
-      if (attendanceRecord && attendanceRecord.checkInTime) {
-        console.log(`Check-in recorded for ${employee.name}`);
-        continue;
-      }
-
-      let reason = ''; // To keep reason for absent
-
-      // 1. Check Weekend (Saturday and Sunday are weekends)
-      if (currentDay === 'saturday' || currentDay === 'sunday') {
-        reason = 'weekend';
-        console.log(
-          `Weekend: ${currentDay}. No action taken for ${employee.name}`
+      const shiftEmployees = employees.filter((employee) => {
+        return (
+          employee.shifts && employee.shifts.toString() === shift.toString()
         );
-        continue;
-      }
-
-      // 2. Check Holiday // 2025-04-09T00:00:00.000Z this is the format of date of holiday in db
-      
-      const getTodayDateISOString = () => {
-        const now = new Date();
-        const utcStartOfDay = new Date(Date.UTC(
-          now.getUTCFullYear(),
-          now.getUTCMonth(),
-          now.getUTCDate()
-        ));
-        return utcStartOfDay.toISOString(); 
-      };
-      
-      const todayDate = getTodayDateISOString();
-
-      const isHoliday = await HolidaysModel.findOne({ fromDate: todayDate });
-
-      
-
-      if (isHoliday) {
-        reason = 'holiday';
-        console.log(
-          `It's Holiday today: ${currentDay}. No action taken for ${employee.name}`
-        );
-        continue;
-      }
-
-      // 3. Check Approved Leave
-      const isOnLeave = await leavesModel.findOne({
-        employeeId: employee._id,
-        status: 'approved',
       });
-      if (isOnLeave) {
-        reason = 'leave';
-        console.log(`${employee.name} marked Leave due to approved leave.`);
-        continue;
+
+      const currentDate = moment().startOf('day').toDate();
+      const currentDay = moment().format('dddd').toLowerCase(); // e.g., 'sunday'
+
+      for (const employee of shiftEmployees) {
+        const attendanceRecord = await AttendanceModel.findOne({
+          employeeId: employee._id,
+          date: currentDate,
+        });
+
+        // if (!attendanceRecord || !attendanceRecord.checkInTime) {
+        //   console.log(`Marking ${employee.name} as absent`);
+        //   const newAttendanceRecord = new AttendanceModel({
+        //     employeeId: employee._id,
+        //     employeeName: employee.name,
+        //     date: currentDate,
+        //     checkInTime: null,
+        //     checkOutTime: null,
+        //     totalHours: '0h:0 mins',
+        //     status: 'absent',
+        //     leaveStatus: 'leave',
+        //   });
+
+        //   await newAttendanceRecord.save();
+        // } else {
+        //   console.log(`Check-in recorded for ${employee.name}`);
+        // }
+
+        if (attendanceRecord && attendanceRecord.checkInTime) {
+          console.log(`Check-in recorded for ${employee.name}`);
+          continue;
+        }
+
+        let reason = ''; // To keep reason for absent
+
+        // 1. Check Weekend (Saturday and Sunday are weekends)
+        if (currentDay === 'saturday' || currentDay === 'sunday') {
+          reason = 'weekend';
+          console.log(
+            `Weekend: ${currentDay}. No action taken for ${employee.name}`
+          );
+          continue;
+        }
+
+        // 2. Check Holiday // 2025-04-09T00:00:00.000Z this is the format of date of holiday in db
+
+        const getTodayDateISOString = () => {
+          const now = new Date();
+          const utcStartOfDay = new Date(
+            Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+          );
+          return utcStartOfDay.toISOString();
+        };
+
+        const todayDate = getTodayDateISOString();
+
+        const isHoliday = await HolidaysModel.findOne({ fromDate: todayDate });
+
+        if (isHoliday) {
+          reason = 'holiday';
+          console.log(
+            `It's Holiday today: ${currentDay}. No action taken for ${employee.name}`
+          );
+          continue;
+        }
+
+        // 3. Check Approved Leave
+        const isOnLeave = await leavesModel.findOne({
+          employeeId: employee._id,
+          status: 'approved',
+        });
+        if (isOnLeave) {
+          reason = 'leave';
+          console.log(`${employee.name} marked Leave due to approved leave.`);
+          continue;
+        }
+
+        // 4. Mark Absent
+        reason = 'absent';
+        console.log(`Marking ${employee.name} as absent`);
+
+        const newAttendanceRecord = new AttendanceModel({
+          employeeId: employee._id,
+          employeeName: employee.name,
+          date: currentDate,
+          checkInTime: null,
+          checkOutTime: null,
+          totalHours: '0h:0 mins',
+          status: reason,
+          leaveStatus: 'leave',
+        });
+        await newAttendanceRecord.save();
       }
-
-      // 4. Mark Absent
-      reason = 'absent';
-      console.log(`Marking ${employee.name} as absent`);
-
-      const newAttendanceRecord = new AttendanceModel({
-        employeeId: employee._id,
-        employeeName: employee.name,
-        date: currentDate,
-        checkInTime: null,
-        checkOutTime: null,
-        totalHours: '0h:0 mins',
-        status: reason,
-        leaveStatus: 'leave',
-      });
-      await newAttendanceRecord.save();
-    }
-  },{ timezone : 'Asia/Kolkata' });
+    },
+    { timezone: 'Asia/Kolkata' }
+  );
 };
-
-
-
-
 
 //----------------------------------------- END -----------------------------------//
 
-// every 1 month increase personnel leave by 1
-// exports.updatePersonnelLeave = catchAsync(async (req, res, next) => {
-//   cron.schedule('0 0 5 * *', async () => {
-//     // Get all employee IDs
-//     const employeesData = await Employee.find(
-//       { employementType: 'Permanent' },
-//       '_id'
-//     );
-
-//     // Extract the employee IDs from the fetched data
-//     const employeeIds = employeesData.map((employee) => employee._id);
-
-//     // Update personalLeave count for employees not in probation
-//     for (const employeeId of employeeIds) {
-//       const leaveType = await employedLeaveModel.findOne({ employeeId });
-
-//       if (leaveType) {
-//         // Increment personalLeave by 1
-//         leaveType.personalLeave += 1;
-//         await leaveType.save();
-//       }
-//     }
-//     console.log('Personal leave count updated for employees.');
-//   });
-// });
 
 // Update Personal leave ( unused persoanl leave will be carry forward )
 exports.updatePersonnelLeave = catchAsync(async (req, res, next) => {
-  cron.schedule('0 6 * * *', async () => {
-    try {
-      console.log('Running cron job: Checking employees who completed 1 year.');
+  cron.schedule(
+    '0 6 * * *',
+    async () => {
+      try {
+        console.log(
+          'Running cron job: Checking employees who completed 1 year.'
+        );
 
-      const oneYearAgo = new Date();
-      oneYearAgo.setHours(0, 0, 0, 0);
-      oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+        const oneYearAgo = new Date();
+        oneYearAgo.setHours(0, 0, 0, 0);
+        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
 
-      const employees = await Employee.find(
-        {
-          employementType: { $ne: 'Probation' },
-          joinDate: oneYearAgo,
-        },
-        '_id'
-      );
+        const employees = await Employee.find(
+          {
+            employementType: { $ne: 'Probation' },
+            joinDate: oneYearAgo,
+          },
+          '_id'
+        );
 
-      if (employees.length === 0) {
-        console.log('No employees completed 1 year today.');
-        return;
+        if (employees.length === 0) {
+          console.log('No employees completed 1 year today.');
+          return;
+        }
+
+        const employeeIds = employees.map((emp) => emp._id);
+
+        // Update personalLeave for eligible employees
+        await employedLeaveModel.updateMany(
+          { employeeId: { $in: employeeIds } },
+          { $inc: { personalLeave: 6 } }
+        );
+
+        console.log(
+          `Updated personal leave for ${employeeIds.length} employees.`
+        );
+      } catch (error) {
+        console.error('Error running cron job:', error);
       }
-
-      const employeeIds = employees.map((emp) => emp._id);
-
-      // Update personalLeave for eligible employees
-      await employedLeaveModel.updateMany(
-        { employeeId: { $in: employeeIds } },
-        { $inc: { personalLeave: 6 } }
-      );
-
-      console.log(
-        `Updated personal leave for ${employeeIds.length} employees.`
-      );
-    } catch (error) {
-      console.error('Error running cron job:', error);
-    }
-  },{ timezone : 'Asia/Kolkata' });
+    },
+    { timezone: 'Asia/Kolkata' }
+  );
 });
 
 //*/1 * * * *
 // Reset casualLeave to 6 on every 1st April
 exports.resetCasualLeave = catchAsync(async (req, res, next) => {
-  cron.schedule('0 6 1 4 *', async () => {
-    // Runs on every year 1st of April
-    // Get all employee IDs
-    const employeesData = await Employee.find(
-      { employementType: { $ne: 'Probation' } }, // Exclude 'Probation' employementType
-      '_id'
-    );
+  cron.schedule(
+    '0 6 1 4 *',
+    async () => {
+      // Runs on every year 1st of April
+      // Get all employee IDs
+      const employeesData = await Employee.find(
+        { employementType: { $ne: 'Probation' } }, // Exclude 'Probation' employementType
+        '_id'
+      );
 
-    // Extract the employee IDs from the fetched data
-    const employeeIds = employeesData.map((employee) => employee._id);
+      // Extract the employee IDs from the fetched data
+      const employeeIds = employeesData.map((employee) => employee._id);
 
-    // Update casualLeave count for employees
-    for (const employeeId of employeeIds) {
-      const leaveType = await employedLeaveModel.findOne({ employeeId });
+      // Update casualLeave count for employees
+      for (const employeeId of employeeIds) {
+        const leaveType = await employedLeaveModel.findOne({ employeeId });
 
-      if (leaveType) {
-        // Reset casualLeave to 0 on 1st April at 6 AM
-        leaveType.casualLeave = 6;
-        await leaveType.save();
+        if (leaveType) {
+          // Reset casualLeave to 0 on 1st April at 6 AM
+          leaveType.casualLeave = 6;
+          await leaveType.save();
+        }
       }
-    }
-    console.log('Casual leave count updated for employees.');
-  },{ timezone : 'Asia/Kolkata' });
+      console.log('Casual leave count updated for employees.');
+    },
+    { timezone: 'Asia/Kolkata' }
+  );
 });
 
 // Reset Medical Leave to 6 on every 1st April
 exports.resetMedicalLeave = catchAsync(async (req, res, next) => {
-  cron.schedule('0 6 1 4 *', async () => {
-    // Runs on every year 1st of April
-    // Get all employee IDs
-    const employeesData = await Employee.find(
-      { employementType: { $ne: 'Probation' } }, // Exclude 'Probation' employementType
-      '_id'
-    );
+  cron.schedule(
+    '0 6 1 4 *',
+    async () => {
+      // Runs on every year 1st of April
+      // Get all employee IDs
+      const employeesData = await Employee.find(
+        { employementType: { $ne: 'Probation' } }, // Exclude 'Probation' employementType
+        '_id'
+      );
 
-    // Extract the employee IDs from the fetched data
-    const employeeIds = employeesData.map((employee) => employee._id);
+      // Extract the employee IDs from the fetched data
+      const employeeIds = employeesData.map((employee) => employee._id);
 
-    // Update casualLeave count for employees
-    for (const employeeId of employeeIds) {
-      const leaveType = await employedLeaveModel.findOne({ employeeId });
+      // Update casualLeave count for employees
+      for (const employeeId of employeeIds) {
+        const leaveType = await employedLeaveModel.findOne({ employeeId });
 
-      if (leaveType) {
-        // Reset casualLeave to 0 on 1st April at 6 AM
-        leaveType.medicalLeave = 6;
-        await leaveType.save();
+        if (leaveType) {
+          // Reset casualLeave to 0 on 1st April at 6 AM
+          leaveType.medicalLeave = 6;
+          await leaveType.save();
+        }
       }
-    }
-    console.log('Medical leave count updated for employees.');
-  },{ timezone : 'Asia/Kolkata' });
+      console.log('Medical leave count updated for employees.');
+    },
+    { timezone: 'Asia/Kolkata' }
+  );
 });
 
 exports.resatLWPlLeave = catchAsync(async (req, res, next) => {
-  cron.schedule('0 6 1 4 *', async () => {
-    // Runs on every year 1st of April
-    // Get all employee IDs
-    const employeesData = await Employee.find({}, '_id');
+  cron.schedule(
+    '0 6 1 4 *',
+    async () => {
+      // Runs on every year 1st of April
+      // Get all employee IDs
+      const employeesData = await Employee.find({}, '_id');
 
-    // Extract the employee IDs from the fetched data
-    const employeeIds = employeesData.map((employee) => employee._id);
+      // Extract the employee IDs from the fetched data
+      const employeeIds = employeesData.map((employee) => employee._id);
 
-    // Update casualLeave count for employees
-    for (const employeeId of employeeIds) {
-      const leaveType = await employedLeaveModel.findOne({ employeeId });
+      // Update casualLeave count for employees
+      for (const employeeId of employeeIds) {
+        const leaveType = await employedLeaveModel.findOne({ employeeId });
 
-      if (leaveType) {
-        // Reset casualLeave to 0 on 1st April at 6 AM
-        leaveType.LWP = 0;
-        await leaveType.save();
+        if (leaveType) {
+          // Reset casualLeave to 0 on 1st April at 6 AM
+          leaveType.LWP = 0;
+          await leaveType.save();
+        }
       }
-    }
-    console.log('LWP Leave Reset');
-  },{ timezone : 'Asia/Kolkata' });
+      console.log('LWP Leave Reset');
+    },
+    { timezone: 'Asia/Kolkata' }
+  );
 });
 
 // Dashboard
@@ -1625,31 +1316,28 @@ exports.updateEmployeeProfile = catchAsync(async (req, res, next) => {
   }
 });
 
-
-exports.getEmployeeMonthlyAttendance = catchAsync(async (req,res,next) => {
+exports.getEmployeeMonthlyAttendance = catchAsync(async (req, res, next) => {
   try {
     const employeeId = req.user._id;
-    const currentMonth = moment().month(); 
+    const currentMonth = moment().month();
     const currentYear = moment().year();
 
     const allRecords = await AttendanceModel.find({ employeeId });
 
     // Filter only records from current month
-    const monthlyRecords = allRecords.filter(record => {
+    const monthlyRecords = allRecords.filter((record) => {
       const recordDate = moment(record.date);
       return (
-        recordDate.month() === currentMonth &&
-        recordDate.year() === currentYear
+        recordDate.month() === currentMonth && recordDate.year() === currentYear
       );
     });
 
     console.log(`🚩 Fetched ${monthlyRecords.length} `);
-    
 
     // Group by status
-    const present = monthlyRecords.filter(r => r.status === 'present').length;
-    const absent = monthlyRecords.filter(r => r.status === 'absent').length;
-    const leave = monthlyRecords.filter(r => r.status === 'leave').length;
+    const present = monthlyRecords.filter((r) => r.status === 'present').length;
+    const absent = monthlyRecords.filter((r) => r.status === 'absent').length;
+    const leave = monthlyRecords.filter((r) => r.status === 'leave').length;
 
     return res.status(200).json({
       success: true,
@@ -1665,14 +1353,12 @@ exports.getEmployeeMonthlyAttendance = catchAsync(async (req,res,next) => {
         total: monthlyRecords.length,
       },
     });
-
   } catch (err) {
     console.error('Error fetching employee monthly attendance:', err);
     return {
       success: false,
       message: err.message || 'Error fetching employee monthly attendance data',
-      error: err
+      error: err,
     };
   }
-
-})
+});

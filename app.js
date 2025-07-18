@@ -117,16 +117,7 @@ cronJob.resetMedicalLeave();
 //resatLWPLeave
 cronJob.resatLWPlLeave();
 
-//  Email Alert for Employees all shifts
-// cronJob.handleEmailAlert('Morning', '30 7 * * *');
-// cronJob.handleEmailAlert('General', '30 9 * * *');
-// cronJob.handleEmailAlert('Evening', '30 15 * * *');
 
-// Mark Absent for Employees all shifts
-
-// cronJob.handleAbsentMarking('Morning', '30 8 * * *');
-// cronJob.handleAbsentMarking('General', '30 10 * * *');
-// cronJob.handleAbsentMarking('Evening', '30 16 * * *');
 
 async function setupCronJobs() {
   try {
@@ -140,7 +131,6 @@ async function setupCronJobs() {
       name: { $regex: /^Evening Shift$/i },
     });
 
-    // console.log(morningShift._id, generalShift._id, eveningShift._id);
     
 
     if (!morningShift || !generalShift || !eveningShift) {
@@ -149,14 +139,16 @@ async function setupCronJobs() {
     }
 
     // Email alerts
-    cronJob.handleEmailAlert(morningShift._id, '30 7 * * *');
-    cronJob.handleEmailAlert(generalShift._id, '30 9 * * *');
-    cronJob.handleEmailAlert(eveningShift._id, '30 15 * * *');
+    // cronJob.handleEmailAlert(morningShift._id, '30 7 * * *');
+    // cronJob.handleEmailAlert(generalShift._id, '30 9 * * *');
+    // cronJob.handleEmailAlert(eveningShift._id, '30 15 * * *');
 
     // Mark Absent
-    cronJob.handleAbsentMarking(morningShift._id, '30 8 * * *');
-    cronJob.handleAbsentMarking(generalShift._id, '30 10 * * *');
-    cronJob.handleAbsentMarking(eveningShift._id, '30 16 * * *');
+    // cronJob.handleAbsentMarking(morningShift._id, '00 8 * * *');
+    // cronJob.handleAbsentMarking(generalShift._id, '00 11 * * *');
+    // cronJob.handleAbsentMarking(eveningShift._id, '00 17 * * *');
+
+
 
     console.log('✅ Cron jobs set up successfully!');
   } catch (err) {

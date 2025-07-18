@@ -3,6 +3,16 @@ const catchAsync = require('../utills/catchAsync');
 const APIFeatures = require('../utills/apiFeatures');
 
 exports.getAllNotifications = catchAsync(async (req, res, next) => {
+  if (!req.user || !req.user.id) {
+    return res.status(200).json({
+      status: 'success',
+      results: 0,
+      data: {
+        notifications: [],
+      },
+    });
+  }
+
   let filter = { userId: req.user.id };
 
   const features = new APIFeatures(Notification.find(filter), req.query)
@@ -21,6 +31,7 @@ exports.getAllNotifications = catchAsync(async (req, res, next) => {
     },
   });
 });
+
 
 exports.markNotificationAsRead = catchAsync(async (req, res, next) => {
   const notification = await Notification.findByIdAndUpdate(

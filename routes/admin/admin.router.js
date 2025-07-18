@@ -141,6 +141,17 @@ router
     attendanceController.getAllEmployeeAttendance
   );
 
+  
+// router
+//   .route('/employeeDelete/attendance/:id')
+//   .post(
+//     authController.restrictTo('Admin', 'HR'),
+//     attendanceController.deleteAttendance
+//   );
+
+
+  // router.delete('/attendance/:id', attendanceController.deleteAttendance);
+
   // router.get('/getAttendanceByID/:id',
   //   authController.restrictTo('Admin','HR'),
   //   attendanceController.getAttendanceByID
