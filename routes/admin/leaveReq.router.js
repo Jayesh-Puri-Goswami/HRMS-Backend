@@ -14,6 +14,10 @@ router.get(
 
 router.get('/getAll/employees/leave-request', authController.restrictTo('Admin','HR'), leaveReqController.getAllEmployeeLeaveRequests);
 
+router.get('/getLeaveStatus', authController.restrictTo('Admin','HR'), leaveReqController.getLeaveStatus);
+
+router.get('/getLeaveSummaryById/:id', authController.restrictTo('Admin','HR'), leaveReqController.getLeaveSummaryById);
+
 router.post('/delete/leave-request/:id', authController.restrictTo('Admin','HR'), leaveReqController.deleteLeaveRequestForAdmin);
 
 router.post('/manage/leave-request/:id', authController.restrictTo('Admin','HR','Management','TeamLead'), leaveReqController.manageLeaveRequest);
@@ -28,6 +32,13 @@ router.post(
   '/manage/update-leave-request-admin/:id',
   authController.restrictTo('Admin', 'HR'),
   leaveReqController.updateLeaveRequestAdmin
+);
+
+// Add comment on a leave request
+router.post(
+  '/manage/leave-request/:id/comment',
+  authController.restrictTo('Admin','HR','Management','TeamLead'),
+  leaveReqController.addLeaveRequestComment
 );
 
 router.get(

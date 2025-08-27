@@ -11,7 +11,7 @@ const path = require('path');
 const fs = require('fs');
 
 exports.createPolicy = catchAsync(async (req, res, next) => {
-  const { policyType, policyVersion } = req.body;
+  const { policyType, policyVersion, description } = req.body;
 
   // Validate required fields
   if (!policyType) {
@@ -58,7 +58,8 @@ exports.createPolicy = catchAsync(async (req, res, next) => {
     policyType,
     policyVersion,
     file: filename,
-  });
+    description
+    });
 
   if (!policy) {
     return next(new AppError('write some error', 500));
@@ -75,7 +76,7 @@ exports.createPolicy = catchAsync(async (req, res, next) => {
 
 exports.updatePolicy = catchAsync(async (req, res, next) => {
   const { id } = req.params;
-  const { policyType, policyVersion } = req.body;
+  const { policyType, policyVersion, description } = req.body;
 
   // Validate required fields
   if (!policyType) {
@@ -123,7 +124,7 @@ exports.updatePolicy = catchAsync(async (req, res, next) => {
   existingPolicy.policyType = policyType;
   existingPolicy.policyVersion = policyVersion;
   existingPolicy.file = filename;
-
+  existingPolicy.description = description;
   await existingPolicy.save();
 
   // Notification To Employees

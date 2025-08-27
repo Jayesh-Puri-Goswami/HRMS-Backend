@@ -13,7 +13,7 @@ const shiftSchema = new mongoose.Schema(
 
 // Helper function to convert "HH:mm" string to minutes
 const timeToMinutes = (timeStr) => {
-  const [hours, minutes] = timeStr.split(':').map(Number);
+  const [hours, minutes] = timeStr?.split(':')?.map(Number);
   return hours * 60 + minutes;
 };
 

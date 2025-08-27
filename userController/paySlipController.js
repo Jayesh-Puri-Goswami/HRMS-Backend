@@ -137,23 +137,7 @@ exports.getEmployeePaySlipById = catchAsync(async (req, res) => {
   }
 });
 
-// exports.getEmployeePaySlipById = catchAsync(async (req, res) => {
-//   const Id = req.params.id;
 
-//   try {
-//     const Data = await PaySlip.findOne({ _id:Id }).populate('employeeId');
-//     console.log("populate data",Data)
-//     if (!Data) {
-//       return res
-//         .status(404)
-//         .json({ message: 'Data not found.' });
-//     }
-
-//     res.json(Data);
-//   } catch (err) {
-//     res.status(500).json({ message: err.message });
-//   }
-// });
 
 exports.getEmplpoyeePaySlip_Data = catchAsync(async (req, res) => {
   const Id = req.params.id;
@@ -243,6 +227,7 @@ exports.deletePaySlip = catchAsync(async (req, res, next) => {
 
 // For Employee
 exports.getPaySlipByEmployee = catchAsync(async (req, res, next) => {
+  const userId = req.params.id || req.user._id;
   const { year, month, page, pageSize } = req.query;
   const pageNum = parseInt(page) || 1;
   const size = parseInt(pageSize) || 10;
@@ -251,7 +236,7 @@ exports.getPaySlipByEmployee = catchAsync(async (req, res, next) => {
   // Build the query object based on provided filters
   const query = {
     isActive: true,
-    employeeId: req.user._id, // Assuming you have the authenticated user's _id available in req.user._id
+    employeeId: userId,
   };
 
   if (year) {

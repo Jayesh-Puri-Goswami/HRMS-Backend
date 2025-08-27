@@ -5,6 +5,33 @@ const AppError = require('../utills/appError');
 const moment = require('moment');
 const leavesModel = require('../model/leaves.model');
 
+// Helper function to create or get employee leave balance
+const getOrCreateEmployeeLeaveBalance = async (employeeId) => {
+  let leaveBalance = await AvailableLeave.findOne({ employeeId });
+  
+  if (!leaveBalance) {
+    // Create new leave balance record with default values
+    leaveBalance = new AvailableLeave({
+      employeeId,
+      employeeName: 'Unknown', // Will be updated when employee data is available
+      role: 'Employee',
+      casualLeave: 0,
+      personalLeave: 0,
+      medicalLeave: 0,
+      LWP: 0
+    });
+    await leaveBalance.save();
+  }
+  
+  // Ensure LWP field exists
+  if (leaveBalance.LWP === undefined) {
+    leaveBalance.LWP = 0;
+    await leaveBalance.save();
+  }
+  
+  return leaveBalance;
+};
+
 // For Employee
 
 
@@ -12,13 +39,8 @@ exports.getEmployeePaidLeave = catchAsync(async (req, res) => {
   const employeeId = req.user._id;
 
   try {
-    // Fetch employee's available leave balance
-    const leaveData = await AvailableLeave.findOne({ employeeId });
-    if (!leaveData) {
-      return res
-        .status(404)
-        .json({ message: 'Leave data not found for the provided employeeId.' });
-    }
+    // Get or create employee's available leave balance
+    const leaveData = await getOrCreateEmployeeLeaveBalance(employeeId);
 
     // Fetch employee details (to check the joining date)
     const employee = await Employee.findById(employeeId);
@@ -55,13 +77,17 @@ exports.getEmployeePaidLeave = catchAsync(async (req, res) => {
       hasSufficientLeaveBalance
     ) {
       res.json({
+        status: 'success',
         leaveBalance: leaveData,
         eligibleForSixPersonalLeaves: true,
+        message: 'Employee leave balance retrieved successfully'
       });
     } else {
       res.json({
+        status: 'success',
         leaveBalance: leaveData,
         eligibleForSixPersonalLeaves: false,
+        message: 'Employee leave balance retrieved successfully'
       });
     }
   } catch (err) {
@@ -75,17 +101,18 @@ exports.getEmployeePaidLeave = catchAsync(async (req, res) => {
 
 exports.getEmployeePaidLeaveById = catchAsync(async (req, res) => {
     const employeeId = req.params.id;
-  
+
+    console.log(`Running getEmployeePaidLeaveById for employee:`, employeeId);
+    
     try {
-      const leaveData = await AvailableLeave.findOne({ employeeId });
+      // Get or create employee's available leave balance
+      const leaveData = await getOrCreateEmployeeLeaveBalance(employeeId);
   
-      if (!leaveData) {
-        return res
-          .status(404)
-          .json({ message: 'Leave data not found for the provided employeeId.' });
-      }
-  
-      res.json(leaveData);
+      res.json({
+        status: 'success',
+        data: leaveData,
+        message: 'Employee leave balance retrieved successfully'
+      });
     } catch (err) {
       res.status(500).json({ message: err.message });
     }
@@ -93,6 +120,12 @@ exports.getEmployeePaidLeaveById = catchAsync(async (req, res) => {
 
   exports.updateEmployeePaidLeaveById = catchAsync(async (req, res) => {
     const updateData = req.body; 
+    
+    // Ensure LWP field is included if not provided
+    if (updateData.LWP === undefined) {
+      updateData.LWP = 0;
+    }
+    
     try {
       const updatedLeaveData = await AvailableLeave.findByIdAndUpdate(
         req.params.id, 
@@ -105,8 +138,79 @@ exports.getEmployeePaidLeaveById = catchAsync(async (req, res) => {
           .status(404)
           .json({ message: 'Leave data not found for the provided employeeId.' });
       }
+
+      // Ensure LWP field exists in response
+      if (updatedLeaveData.LWP === undefined) {
+        updatedLeaveData.LWP = 0;
+      }
   
-      res.json(updatedLeaveData);
+      res.json({
+        status: 'success',
+        data: updatedLeaveData,
+        message: 'Employee leave balance updated successfully'
+      });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Create or initialize employee leave balance
+  exports.createEmployeeLeaveBalance = catchAsync(async (req, res) => {
+    const { employeeId, employeeName, role, casualLeave, personalLeave, medicalLeave, LWP } = req.body;
+    
+    try {
+      // Check if employee leave balance already exists
+      let existingBalance = await AvailableLeave.findOne({ employeeId });
+      
+      if (existingBalance) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Employee leave balance already exists',
+          data: existingBalance
+        });
+      }
+      
+      // Create new employee leave balance
+      const newLeaveBalance = new AvailableLeave({
+        employeeId,
+        employeeName: employeeName || 'Unknown',
+        role: role || 'Employee',
+        casualLeave: casualLeave || 0,
+        personalLeave: personalLeave || 0,
+        medicalLeave: medicalLeave || 0,
+        LWP: LWP || 0
+      });
+      
+      const savedLeaveBalance = await newLeaveBalance.save();
+      
+      res.status(201).json({
+        status: 'success',
+        message: 'Employee leave balance created successfully',
+        data: savedLeaveBalance
+      });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Reset or update LWP count for an employee
+  exports.resetLWPCount = catchAsync(async (req, res) => {
+    const { employeeId } = req.params;
+    const { LWP } = req.body;
+    
+    try {
+      // Get or create employee leave balance
+      const leaveBalance = await getOrCreateEmployeeLeaveBalance(employeeId);
+      
+      // Update LWP count
+      leaveBalance.LWP = LWP || 0;
+      await leaveBalance.save();
+      
+      res.json({
+        status: 'success',
+        message: 'LWP count updated successfully',
+        data: leaveBalance
+      });
     } catch (err) {
       res.status(500).json({ message: err.message });
     }
@@ -144,10 +248,20 @@ exports.getAllEmployeePaidLeave = catchAsync(async (req, res) => {
       .skip((page - 1) * pageSize)
       .limit(pageSize);
 
+    // Ensure LWP field exists for all employees
+    const leavesWithLWP = leaves.map(leave => {
+      if (leave.LWP === undefined) {
+        leave.LWP = 0;
+      }
+      return leave;
+    });
+
     res.json({
-      data: leaves,
+      status: 'success',
+      data: leavesWithLWP,
       currentPage: page,
       totalPages: Math.ceil(totalLeavesCount / pageSize),
+      message: 'All employee leave balances retrieved successfully'
     });
   } catch (err) {
     res.status(500).json({ message: err.message });

@@ -103,7 +103,7 @@ const UserSchema = new mongoose.Schema(
     recentMarksheet: { type: String, default: null },
     bankDetails: {
       bankName: { type: String, default: null },
-      accounNumber: { type: Number, default: 0 },
+      accountNumber: { type: Number, default: 0 },
       ifscCode: { type: String, default: null },
       accountHolderName: { type: String, default: null },
     },

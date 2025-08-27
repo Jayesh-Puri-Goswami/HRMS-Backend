@@ -1,6 +1,8 @@
 const multer = require('multer');
 const sharp = require('sharp');
 const User = require('../model/admin.model');
+const Attendance = require('../model/attendance.model');
+const LeaveRequest = require('../model/leaves.model');
 const catchAsync = require('../utills/catchAsync');
 const AppError = require('../utills/appError');
 const factory = require('./handlerFactory');
@@ -143,6 +145,51 @@ exports.getAllEmployeeCount = catchAsync(async (req, res, next) => {
     return next(new AppError('Error retrieving records', 401));
   }
 });
+
+exports.getHrDashboard = catchAsync(async (req, res, next) => {
+  try {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const tomorrow = new Date(today);
+    tomorrow.setDate(today.getDate() + 1);
+
+    const totalEmployee = await User.countDocuments({ role: { $ne: 'Admin' } });
+
+    const onLeaveIds = await LeaveRequest.distinct('employeeId', {
+      status: 'approved',
+      'leaveDetails.date': { $gte: today, $lt: tomorrow },
+    });
+    
+    const leaveEmployees = onLeaveIds.length;
+
+    const halfDayEmployeeIds = await LeaveRequest.distinct('employeeId', {
+      status: 'approved',
+      'leaveDetails': { $elemMatch: { date: { $gte: today, $lt: tomorrow }, halfDay: true } },
+    });
+
+    const halfDayEmployees = halfDayEmployeeIds.length;
+
+    const presentEmployeeIds = await Attendance.distinct('employeeId', {
+      date: { $gte: today, $lt: tomorrow },
+    });
+    
+    const absentEmployees = await User.countDocuments({
+        role: { $ne: 'Admin' },
+        _id: { $nin: [...presentEmployeeIds, ...onLeaveIds] }
+    });
+
+    res.status(200).json({
+      totalEmployee,
+      absentEmployees,
+      leaveEmployees,
+      halfDayEmployees
+    });
+  } catch (error) {
+    console.error(error)
+    return next(new AppError('Error retrieving records', 500));
+  }
+})
 
 
 exports.getEmployeeCountsByType = catchAsync(async (req, res, next) => {
@@ -291,7 +338,39 @@ exports.getAllManagers = catchAsync(async (req, res, next) => {
     status: 'success',
     results: managers.length,
     data: {
-      managers,
+      managers: managers.map(manager => ({
+        _id: manager._id,
+        name: manager.name,
+        profile_image: manager.profile_image,
+      })),
+    },
+  });
+});
+
+exports.getAllTeamLeads = catchAsync(async (req, res, next) => {
+  let filter = { role: 'TeamLead' }; // Fetch only users with role 'Management'
+
+  if (req.params.userId) {
+    filter._id = req.params.userId; // If a specific userId is provided, fetch that manager
+  }
+
+  const features = new APIFeatures(User.find(filter), req.query)
+    .filter()
+    .sort()
+    .limitFields()
+    .paginate();
+
+  const teamLeads = await features.query;
+
+  res.status(200).json({
+    status: 'success',
+    results: teamLeads.length,
+    data: {
+      teamLeads: teamLeads.map(manager => ({
+        _id: manager._id,
+        name: manager.name,
+        profile_image: manager.profile_image,
+      })),
     },
   });
 });
@@ -327,5 +406,218 @@ exports.changePassword = catchAsync(async (req, res, next) => {
   res.status(200).json({
     status: 'success',
     message: 'Password updated successfully.',
+  });
+});
+
+
+// New APIs 
+
+exports.getEmployeeAddress = catchAsync(async (req, res, next) => {
+  const userId = req.params.id || req.user.id;
+  const user = await User.findById(userId).select('permanentAddress currentAddress');
+
+  if (!user) return next(new AppError('User not found', 404));
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      permanentAddress: user.permanentAddress || null,
+      currentAddress: user.currentAddress || null,
+    },
+  });
+});
+
+exports.updateEmployeePermanentAddress = catchAsync(async (req, res, next) => {
+  const userId = req.params.id || req.user.id;
+  const { permanentAddress } = req.body;
+
+  if (!permanentAddress) return next(new AppError('Permanent address is required', 400));
+
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { permanentAddress },
+    { new: true, runValidators: true }
+  ).select('permanentAddress');
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Permanent address updated successfully',
+    data: user,
+  });
+});
+
+
+exports.updateEmployeeCurrentAddress = catchAsync(async (req, res, next) => {
+  const userId = req.params.id || req.user.id;
+  const { currentAddress } = req.body;
+
+  if (!currentAddress) return next(new AppError('Current address is required', 400));
+
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { currentAddress },
+    { new: true, runValidators: true }
+  ).select('currentAddress');
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Current address updated successfully',
+    data: user,
+  });
+});
+
+
+exports.getEmployeeDocuments = catchAsync(async (req, res, next) => {
+  const userId = req.params.id || req.user.id;
+  
+  const user = await User.findById(userId).select(
+    'aadhaarCard panCard voterId photograph addressProof otherDocument recentMarksheet'
+  );
+
+  if (!user) return next(new AppError('User not found', 404));
+  res.status(200).json({
+    status: 'success',
+    data: {
+      documents: {
+        aadhaarCard: user.aadhaarCard,
+        panCard: user.panCard,
+        voterId: user.voterId,
+        photograph: user.photograph,
+        addressProof: user.addressProof,
+        otherDocument: user.otherDocument,
+        recentMarksheet: user.recentMarksheet
+      }
+    }
+  });
+});
+
+// Upload/update one or more employee documents
+exports.updateEmployeeDocuments = catchAsync(async (req, res, next) => {
+  const userId = req.params.id || req.user.id;
+
+  // List of document fields
+  const docFields = [
+    'aadhaarCard',
+    'panCard',
+    'voterId',
+    'photograph',
+    'addressProof',
+    'otherDocument',
+    'recentMarksheet'
+  ];
+
+  // Prepare update object dynamically
+  const updateData = {};
+  docFields.forEach(field => {
+    if (req.body && req.body[field]) {
+      updateData[field] = req.body[field];
+    }
+  });
+
+  if (Object.keys(updateData).length === 0) {
+    return next(new AppError('No document fields provided for update', 400));
+  }
+
+  const updatedUser = await User.findByIdAndUpdate(
+    userId,
+    updateData,
+    { new: true, runValidators: true }
+  );
+
+  if (!updatedUser) return next(new AppError('User not found', 404));
+
+  res.status(200).json({
+    status: 'success',
+    message: 'Documents updated',
+    data: {
+      documents: docFields.reduce((acc, field) => {
+        acc[field] = updatedUser[field];
+        return acc;
+      }, {})
+    }
+  });
+});
+
+exports.getEmployeeBankDetails = catchAsync(async (req, res, next) => {
+  const userId = req.params.id || req.user.id;
+
+  const user = await User.findById(userId).select('bankDetails');
+
+  if (!user) return next(new AppError('User not found', 404));
+
+  res.status(200).json({
+    status: 'success',
+    data: {
+      bankDetails: user.bankDetails
+    }
+  })
+})
+
+exports.updateEmployeeBankDetails = catchAsync(async (req, res, next) => {
+  const userId = req.params.id || req.user.id;
+  const allowedFields = [
+    'bankName',
+    'accountNumber',
+    'ifscCode',
+    'accountHolderName',
+    'branchName',
+    'accountType',
+    'upiId',
+  ];
+  const updateData = {};
+  allowedFields.forEach(field => {
+    if (req.body[field] !== undefined) {
+      updateData[`bankDetails.${field}`] = req.body[field];
+    }
+  });
+  if (Object.keys(updateData).length === 0) {
+    return next(new AppError('No bank detail fields provided for update', 400));
+  }
+  const updatedUser = await User.findByIdAndUpdate(
+    userId,
+    { $set: updateData },
+    { new: true, runValidators: true }
+  ).select('bankDetails');
+  if (!updatedUser) return next(new AppError('User not found', 404));
+  res.status(200).json({
+    status: 'success',
+    message: 'Bank details updated',
+    data: {
+      bankDetails: updatedUser.bankDetails
+    }
+  });
+});
+
+
+exports.getEmployeeGraduationDetails = catchAsync(async (req, res, next) => {
+  const userId = req.params.id || req.user.id;
+  const user = await User.findById(userId).select('graduationDetails');
+  if (!user) return next(new AppError('User not found', 404));
+  res.status(200).json({
+    status: 'success',
+    data: {
+      graduationDetails: user.graduationDetails || []
+    }
+  });
+});
+
+exports.updateEmployeeGraduationDetails = catchAsync(async (req, res, next) => {
+  const userId = req.params.id || req.user.id;
+  const { graduationDetails } = req.body;
+  if (!Array.isArray(graduationDetails)) {
+    return next(new AppError('graduationDetails must be an array', 400));
+  }
+  const user = await User.findByIdAndUpdate(
+    userId,
+    { graduationDetails },
+    { new: true, runValidators: true }
+  ).select('graduationDetails');
+  if (!user) return next(new AppError('User not found', 404));
+  res.status(200).json({
+    status: 'success',
+    message: 'Graduation details updated',
+    data: {
+      graduationDetails: user.graduationDetails
+    }
   });
 });

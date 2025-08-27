@@ -77,7 +77,7 @@ router.post(
 
 
 
-router.post(
+router.put(
   '/edit-employee/:id',
   authController.restrictTo('Admin', 'HR'),
   authController.uploadDocuments,
@@ -93,6 +93,10 @@ router
   .route('/getAll-managers/data')
   .get(authController.restrictTo('Admin', 'HR'), adminController.getAllManagers);
 
+  router
+  .route('/getAll-teamLeads/data')
+  .get(authController.restrictTo('Admin', 'HR'), adminController.getAllTeamLeads);
+
 router
   .route('/getAll-employees/details')
   .get(
@@ -106,6 +110,15 @@ router
     authController.restrictTo('Admin', 'HR'),
     adminController.getAllEmployeeCount
   );
+
+  router
+  .route('/hrDashboard')
+  .get(
+    authController.restrictTo('Admin', 'HR'),
+    adminController.getHrDashboard
+  );
+
+  
 
   router
   .route('/getEmployeeCounts/ByType')
@@ -158,7 +171,12 @@ router
   // )
 
 router.get('/getAttendanceById/:id',authController.restrictTo('Admin','HR'),attendanceController.getAttendanceByID)
+
+router.post('/addAttendanceById/:id',authController.restrictTo('Admin','HR'),attendanceController.addAttendanceByID)
+
 router.put('/updateAttendanceById/:id',authController.restrictTo('Admin','HR'),attendanceController.updateAttendanceById);
+
+
 
 router.get('/getEmployeeStats/:id',attendanceController.getEmployeeStats)
 

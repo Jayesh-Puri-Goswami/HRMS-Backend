@@ -1,14 +1,34 @@
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
-const rateLimit = require('express-rate-limit');
 const morgan = require('morgan');
-const helmet = require('helmet');
 const mongoSanitize = require('express-mongo-sanitize');
 const xss = require('xss-clean');
 const cookieParser = require('cookie-parser');
 const compression = require('compression');
 const cors = require('cors');
+
+// Import configurations
+// const { 
+//   accessLogStream, 
+//   errorLogStream, 
+//   detailedFormat, 
+//   productionFormat, 
+//   developmentFormat, 
+//   errorLogger, 
+//   securityLogger 
+// } = require('./config/logger');
+
+const { 
+  generalLimiter, 
+  authLimiter, 
+  apiLimiter, 
+  uploadLimiter, 
+  loginLimiter, 
+  adminLimiter 
+} = require('./config/rateLimiter');
+
+// const securityConfig = require('./config/security');
 
 const AppError = require('./utills/appError');
 const GlobalError = require('./utills/errorController');
@@ -17,7 +37,6 @@ const GlobalError = require('./utills/errorController');
 const AdminRoutes = require('./routes/AdminRoutes');
 const EmployeeRoutes = require('./routes/EmployeeRoutes');
 const NotificationRoutes = require('./routes/notificationRouter');
-const contactRoutes = require('./userController/main.Router');
 const cronJob = require('./controller/attandanceController');
 const payrollCronJob = require('./controller/payrollController');
 
@@ -28,16 +47,30 @@ const app = express();
 
 app.enable('trust proxy');
 
-app.use(cors());
+// Force process timezone to IST at runtime (safety net)
+process.env.TZ = 'Asia/Kolkata';
+
+// Security middleware (apply early)
+// app.use(securityConfig.helmet);
+// app.use(securityConfig.additionalHeaders);
+// app.use(securityConfig.validateRequest);
+// app.use(securityConfig.requestSizeLimiter);
+
+// CORS configuration
+app.use(cors({
+  origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : '*',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key']
+}));
 
 app.options('*', cors());
 
+// Static files
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.use((req, res, next) => {
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  next();
-});
+// Security logger middleware
+// app.use(securityLogger);
 
 const angularBuildPath = path.join(__dirname, 'dist');
 app.use(express.static(angularBuildPath));
@@ -73,36 +106,50 @@ app.get('/csl/agreements/:filename', (req, res) => {
   res.sendFile(filePath);
 });
 
-app.use(helmet());
+// // Enhanced logging configuration
+// if (process.env.NODE_ENV === 'development') {
+//   // Development: Console logging
+//   app.use(morgan(developmentFormat));
+//   // Also log to file for debugging
+//   app.use(morgan(detailedFormat, { stream: accessLogStream }));
+// } else if (process.env.NODE_ENV === 'production') {
+//   // Production: File logging only
+//   app.use(morgan(productionFormat, { stream: accessLogStream }));
+//   // Error logging
+//   app.use(morgan(productionFormat, { 
+//     stream: errorLogStream,
+//     skip: (req, res) => res.statusCode < 400 
+//   }));
+// }
 
-// const accessLogStream = fs.createWriteStream(path.join(__dirname, 'access.log'), { flags: 'a' });
-// Development logging
-if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));
-} else if (process.env.NODE_ENV === 'production') {
-  app.use(morgan('dev'));
-}
-
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Body parsing middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use(cookieParser());
 
+// Security middleware
 app.use(mongoSanitize());
-
 app.use(xss());
 
+// Compression middleware
 app.use(compression());
 
+// Request timestamp middleware
 app.use((req, res, next) => {
   req.requestTime = new Date().toISOString();
-
   next();
 });
 
+// Apply rate limiting to different route groups
+// app.use('/csl/v1/auth', loginLimiter, authLimiter); // Authentication routes
+// app.use('/csl/v1/admin', adminLimiter, apiLimiter); // Admin routes
+// app.use('/csl/v1/upload', uploadLimiter); // File upload routes
+// app.use('/csl/v1', generalLimiter, apiLimiter); // General API routes
+
+// Apply routes with rate limiting
 app.use(
   '/csl/v1',
-  contactRoutes,
   AdminRoutes,
   EmployeeRoutes,
   NotificationRoutes
@@ -139,37 +186,42 @@ async function setupCronJobs() {
     }
 
     // Email alerts
-    // cronJob.handleEmailAlert(morningShift._id, '30 7 * * *');
-    // cronJob.handleEmailAlert(generalShift._id, '30 9 * * *');
-    // cronJob.handleEmailAlert(eveningShift._id, '30 15 * * *');
+    cronJob.handleEmailAlert(morningShift._id, '30 7 * * *');
+    cronJob.handleEmailAlert(generalShift._id, '30 9 * * *');
+    cronJob.handleEmailAlert(eveningShift._id, '30 15 * * *');
 
-    // Mark Absent
-    // cronJob.handleAbsentMarking(morningShift._id, '00 8 * * *');
-    // cronJob.handleAbsentMarking(generalShift._id, '00 11 * * *');
-    // cronJob.handleAbsentMarking(eveningShift._id, '00 17 * * *');
+    // Mark Not In Office
+    cronJob.handleNotInOfficeMarking(morningShift._id, '00 8 * * *');
+    cronJob.handleNotInOfficeMarking(generalShift._id, '00 11 * * *');
+    cronJob.handleNotInOfficeMarking(eveningShift._id, '00 17 * * *');
 
+    // Test Cron
+    // cronJob.handleNotInOfficeMarking(morningShift._id, '* * * * *');
+    // cronJob.handleNotInOfficeMarking(generalShift._id, '* * * * *');
+    // cronJob.handleNotInOfficeMarking(eveningShift._id, '* * * * *');
 
-
-    console.log('✅ Cron jobs set up successfully!');
+    console.log(' Cron jobs set up successfully!');
   } catch (err) {
-    console.error('❌ Failed to setup cron jobs:', err);
+    console.error(' Failed to setup cron jobs:', err);
   }
 }
 
 cronJob.autoCheckOutEmployees();
 
 
-// setInterval(() => {
-//   cronJob.handleAbsentMarking('Morning', '*/1 * * * *');
-// }, 5000);
 
 // Salary Generate Cron
 payrollCronJob.generateEmployeeSalaryCron();
 
+// 404 handler
 app.all('*', (req, res, next) => {
   next(new AppError(`Can't find ${req.originalUrl} on this server!`, 404));
 });
 
+// Error logging middleware
+// app.use(errorLogger);
+
+// Global error handler
 app.use(GlobalError);
 
 module.exports = { app, setupCronJobs };

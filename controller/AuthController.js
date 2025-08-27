@@ -147,7 +147,9 @@ exports.signup = catchAsync(async (req, res, next) => {
 
   try {  
 
-  const email = req.body.email.replace(/\s+/g, '').trim(); // To remove whitespace from email
+  const email = req.body.email.replace(/\s+/g, '').trim().toLowerCase();
+
+  console.log(email);
 
   const user = await User.findOne({ email: email }).select(
     '+password'
@@ -200,9 +202,39 @@ exports.signup = catchAsync(async (req, res, next) => {
     req.body.isManagerAsTeamLead = true
   }
 
-  if (req.body.teamLead === 'null' ){
-    req.body.teamLead = null;
-  } 
+  // Normalize optional ObjectId fields (manager, teamLead)
+  const normalizeObjectId = (val) => {
+    if (val === undefined || val === null) return undefined;
+    if (typeof val === 'string') {
+      const trimmed = val.trim();
+      if (!trimmed || trimmed.toLowerCase() === 'null' || trimmed.toLowerCase() === 'undefined') {
+        return undefined;
+      }
+      return mongoose.Types.ObjectId.isValid(trimmed) ? trimmed : undefined;
+    }
+    return mongoose.Types.ObjectId.isValid(val) ? val : undefined;
+  };
+
+  const normalizedManager = normalizeObjectId(req.body.manager);
+  const normalizedTeamLead = normalizeObjectId(req.body.teamLead);
+
+  // Apply normalized values (omit field entirely if undefined)
+  if (normalizedManager !== undefined) {
+    req.body.manager = normalizedManager;
+  } else {
+    delete req.body.manager;
+  }
+
+  if (normalizedTeamLead !== undefined) {
+    req.body.teamLead = normalizedTeamLead;
+  } else {
+    delete req.body.teamLead;
+  }
+
+  // If manager should also act as team lead, mirror when available
+  if (req.body.isManagerAsTeamLead === true && req.body.manager && !req.body.teamLead) {
+    req.body.teamLead = req.body.manager;
+  }
 
   // console.log('This is the body' + req.body);
   
@@ -235,7 +267,7 @@ exports.signup = catchAsync(async (req, res, next) => {
   createSendToken(newUser, 201, req, res);
   } catch (error) {
     console.log(error)
-    
+    return next(new AppError(`Error creating user: ${error}`, 500));
   }
 });
 
@@ -289,11 +321,13 @@ exports.editEmployee = catchAsync(async (req, res, next) => {
 
 
 
-  if (req.body.changePassword) {
-    user.password = req.body.changePassword;
+  // Handle password update
+  if (req.body.password && req.body.password.trim() !== '') {
+    user.password = req.body.password;
+    console.log('Password updated for user:', user.email);
   }
 
-  console.log(req.body.changePassword);
+  console.log('Password field received:', req.body.password ? 'Yes' : 'No');
 
   // Convert dob and joinDate to ISO format if they exist
   if (req.body.dob) {

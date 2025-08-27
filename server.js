@@ -1,5 +1,9 @@
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
+const path = require('path');
+
+// Initialize log manager
+const { initLogManager } = require('./config/logger');
 
 process.on('uncaughtException', (err) => {
   console.log('UNCAUGHT EXCEPTION! 💥 Shutting down...');
@@ -20,17 +24,22 @@ mongoose
   .connect(DB, {
     useNewUrlParser: true,
   })
-  .then(() => {
+  .then(async () => {
     console.log('DB connection successful!');
+    
+    // Initialize log manager
+    initLogManager();
+    
     // Now safely call the setupCronJobs
-    // setupCronJobs();
+    setupCronJobs();
   });
 
 const port = process.env.PORT || 8084;
 
-
 const server = app.listen(port, () => {
   console.log(`App running on port ${port}...`);
+  console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`Log directory: ${path.join(__dirname, 'logs')}`);
 });
 
 process.on('unhandledRejection', (err) => {

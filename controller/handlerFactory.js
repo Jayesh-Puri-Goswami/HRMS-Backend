@@ -147,6 +147,7 @@ exports.getEmployees = (Model, pop) =>
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const filter = req.query.filter || '';
+    const department = req.query.department || '';
     const sortField = req.query.sortField || 'createdAt';
     const sortOrder = req.query.sortOrder.toLowerCase() || 'desc';
 
@@ -155,22 +156,38 @@ exports.getEmployees = (Model, pop) =>
     const sortOptions = {};
     sortOptions[sortField] = sortOrder === 'desc' ? -1 : 1;
 
-    const query = Model.find({
-      role: { $in: ['Employee', 'HR', 'Management','TeamLead'] },
+    // Build query object
+    const queryObj = {
+      role: { $in: ['Employee', 'HR', 'Management', 'TeamLead'] },
       name: { $regex: filter, $options: 'i' },
-    })
+    };
+
+    // Add department filter if provided
+    if (department) {
+      queryObj.department = department;
+    }
+
+    const query = Model.find(queryObj)
       .populate(pop)
       .sort(sortOptions)
       .skip(skip)
       .limit(limit)
       .exec();
 
+    // Build count query object (same as main query but without pagination)
+    const countQueryObj = {
+      role: { $in: ['Employee', 'HR', 'Management', 'TeamLead'] },
+      name: { $regex: filter, $options: 'i' },
+    };
+
+    // Add department filter to count query if provided
+    if (department) {
+      countQueryObj.department = department;
+    }
+
     await Promise.all([
       query,
-      Model.countDocuments({
-        role: 'Employee',
-        name: { $regex: filter, $options: 'i' },
-      }),
+      Model.countDocuments(countQueryObj),
     ])
       .then(([data, totalCount]) => {
         res.json({

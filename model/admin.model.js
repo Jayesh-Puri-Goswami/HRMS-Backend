@@ -3,12 +3,6 @@ const mongoose = require('mongoose');
 const validator = require('validator');
 const bcrypt = require('bcryptjs');
 
-// const ENCRYPTION_KEY = Buffer.from(process.env.ENCRYPTION_KEY, 'hex');
-// const IV_LENGTH = 16;
-
-// if (!ENCRYPTION_KEY || Buffer.from(ENCRYPTION_KEY, 'hex').length !== 32) {
-//   throw new Error('Invalid ENCRYPTION_KEY: Must be a 32-byte hex string.');
-// }
 
 const UserSchema = new mongoose.Schema(
   {
@@ -87,6 +81,14 @@ const UserSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    permanentAddress: {
+      type:  String,
+      default: ""
+    },
+    currentAddress : {
+      type :  String,
+      default : "",
+    },
     joinDate: {
       type: String,
       default: null,
@@ -99,10 +101,24 @@ const UserSchema = new mongoose.Schema(
       type: String,
       default: null,
     },
+    graduationDetails: [
+      {
+        educationTitle: { type: String, required: true },
+        instituteName: { type: String, required: true },
+        phone: { type: String, default: '' },
+        email: { type: String, default: '' },
+        address: { type: String, default: '' },
+      }
+    ],
     shifts: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Shift',
       default: null,
+    },
+    userAttendance : {
+      type : mongoose.Schema.Types.ObjectId,
+      ref : 'Attendance',
+      default : null
     },
     employementType: {
       type: String,
@@ -125,26 +141,20 @@ const UserSchema = new mongoose.Schema(
     recentMarksheet: { type: String, default: null },
     bankDetails: {
       bankName: { type: String, default: null },
-      accounNumber: { type: Number, default: 0 },
+      accountNumber: { type: String, default: '' },
       ifscCode: { type: String, default: null },
       accountHolderName: { type: String, default: null },
+      branchName: { type: String, default: null },
+      accountType: { type: String, default: null },
+      upiId: { type: String, default: null },
     },
     password: {
       type: String,
-      // required: [true, 'Please provide a password'],
-      // minlength: 8,
       select: false,
     },
     passwordConfirm: {
       type: String,
-      // required: [true, 'Please confirm your password'],
-      // validate: {
-      //   // This only works on CREATE and SAVE!!!
-      //   validator: function (el) {
-      //     return el === this.password;
-      //   },
-      //   message: 'Passwords are not the same!',
-      // },
+ 
     },
     passwordChangedAt: Date,
     passwordResetToken: String,
@@ -247,6 +257,6 @@ UserSchema.methods.createPasswordResetToken = function () {
 };
 
 
-const User = mongoose.model('User', UserSchema);
+const   User = mongoose.model('User', UserSchema);
 
 module.exports = User;

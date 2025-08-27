@@ -17,7 +17,7 @@ router.post(
   policyController.createPolicy
 );
 
-router.post(
+router.put(
   '/policy/update/:id',
   upload.single('file'),
   policyController.updatePolicy

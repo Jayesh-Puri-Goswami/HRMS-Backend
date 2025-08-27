@@ -13,7 +13,7 @@ router.use(authController.protect);
 
 router.post('/create/shift', shiftController.createShift);
 
-router.post('/updateShift/:id', shiftController.updateShift);
+router.put('/updateShift/:id', shiftController.updateShift);
 
 router.get('/getAll/Shifts', shiftController.getAllShifts);
 

@@ -7,10 +7,14 @@ const employedLeave = require('../model/employeePaidLeave.model');
 const moment = require('moment');
 const Notification = require('../model/notification.model');
 const sendNotification = require('../utills/notificationHelper');
+const attendanceModel = require('../model/attendance.model');
+
 
 exports.getEmployeeLeaveRequest = catchAsync(async (req, res) => {
   const { month, year } = req.query; // Extract month and year from the query parameters
   const employeeId = req.user._id; // Extract the employeeId from the query parameters
+
+  console.log(req.query);
 
   let searchMonth;
   let nextMonth;
@@ -28,7 +32,8 @@ exports.getEmployeeLeaveRequest = catchAsync(async (req, res) => {
   }
 
   // Pagination options
-  const page = parseInt(req.query.page) || 1;
+  const page = parseInt(req.query.page)
+  console.log(page);
   const pageSize = parseInt(req.query.pageSize) || 10;
 
   try {
@@ -49,10 +54,20 @@ exports.getEmployeeLeaveRequest = catchAsync(async (req, res) => {
       .skip((page - 1) * pageSize)
       .limit(pageSize);
 
+    // Additional counts
+    const today = moment().startOf('day').toDate();
+    const approvedLeavesCount = await leavesModel.countDocuments({ employeeId, status: 'approved' });
+    const upcomingLeavesCount = await leavesModel.countDocuments({ employeeId, status: 'approved', fromDate: { $gt: today } });
+    const pendingLeavesCount = await leavesModel.countDocuments({ employeeId, status: 'pending' });
+
     res.json({
       data: leaves,
       currentPage: page,
       totalPages: Math.ceil(totalLeavesCount / pageSize),
+      totalLeavesCount: totalLeavesCount,
+      leaveApproved: approvedLeavesCount,
+      upcomingLeave: upcomingLeavesCount,
+      pendingRequest: pendingLeavesCount,
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -181,7 +196,12 @@ exports.getAllEmployeePendingLeaveRequests = catchAsync(async (req, res) => {
 });
 
 exports.leaveRequest = catchAsync(async (req, res, next) => {
-  const { applyDate, fromDate, toDate, halfDay, reason } = req.body;
+  const { applyDate, fromDate, toDate, halfDay, reason, leaveType } = req.body;
+
+  // Validate required fields
+  if (!applyDate || !fromDate || !toDate || !reason || !leaveType) {
+    return next(new AppError('All required fields must be provided', 400));
+  }
 
   const holidays = await holidaysModel.find();
 
@@ -196,12 +216,42 @@ exports.leaveRequest = catchAsync(async (req, res, next) => {
   const currentDate = moment();
   const employmentDuration = currentDate.diff(joinDate, 'years');
 
+  // Map frontend leave type to backend format
+  const mapLeaveType = (frontendLeaveType) => {
+    const typeMap = {
+      'casual-leave': 'casual',
+      'personal-leave': 'personal',
+      'medical-leave': 'medical',
+      'emergency-leave': 'medical', // Map emergency to medical
+      'work-from-home': 'casual', // Map WFH to casual
+      'maternity-leave': 'personal', // Map maternity to personal
+      'paternity-leave': 'personal', // Map paternity to personal
+      'sick-leave': 'medical'
+    };
+    return typeMap[frontendLeaveType] || 'casual';
+  };
+
+  // Convert date strings to Date objects
+  const formattedApplyDate = new Date(applyDate);
+  const formattedFromDate = new Date(fromDate);
+  const formattedToDate = new Date(toDate);
+
+  // Validate dates
+  if (isNaN(formattedFromDate.getTime()) || isNaN(formattedToDate.getTime())) {
+    return next(new AppError('Invalid date format provided', 400));
+  }
+
+  if (formattedFromDate > formattedToDate) {
+    return next(new AppError('From date cannot be later than to date', 400));
+  }
+
   const leaveRequest = new leavesModel({
     employeeId: req.user._id,
     employeeName: employeeInformation.name,
-    applyDate,
-    fromDate,
-    toDate,
+    employeeLeaveType: mapLeaveType(leaveType),
+    applyDate: formattedApplyDate,
+    fromDate: formattedFromDate,
+    toDate: formattedToDate,
     halfDay,
     reason,
   });
@@ -216,17 +266,17 @@ exports.leaveRequest = catchAsync(async (req, res, next) => {
     leaveRequest.teamLeadStatus = 'pending'
   }
 
-  const fromDate1 = moment(fromDate).startOf('day');
-  const toDate1 = moment(toDate).startOf('day');
+  const fromDate1 = moment(formattedFromDate).startOf('day');
+  const toDate1 = moment(formattedToDate).startOf('day');
 
   // Check if there is any overlap with existing leave requests
   const overlappingLeaves = await leavesModel.find({
     employeeId: req.user.id,
     status: { $in: ['pending'] },
     $or: [
-      { fromDate: { $gte: fromDate, $lte: toDate } },
-      { toDate: { $gte: fromDate, $lte: toDate } },
-      { fromDate: { $lte: fromDate }, toDate: { $gte: toDate } },
+      { fromDate: { $gte: formattedFromDate, $lte: formattedToDate } },
+      { toDate: { $gte: formattedFromDate, $lte: formattedToDate } },
+      { fromDate: { $lte: formattedFromDate }, toDate: { $gte: formattedToDate } },
     ],
   });
 
@@ -253,8 +303,9 @@ exports.leaveRequest = catchAsync(async (req, res, next) => {
       actualLeaveDays = 0.5;
       totalDays = 0.5;
       leaveDetails.push({
-        date: start.format('YYYY-MM-DD'),
+        date: start.toDate(),
         halfDay: true,
+        leaveType: mapLeaveType(leaveType),
       });
     } else {
       for (let i = 0; i < totalDays; i++) {
@@ -277,11 +328,13 @@ exports.leaveRequest = catchAsync(async (req, res, next) => {
         if (dayOfWeek === 0 || dayOfWeek === 6 || isHoliday) {
           actualLeaveDays--;
           leaveDetails.push({
-            date: currentDateFormatted,
+            date: currentDate,
+            leaveType: mapLeaveType(leaveType),
           });
         } else {
           leaveDetails.push({
-            date: currentDateFormatted,
+            date: currentDate,
+            leaveType: mapLeaveType(leaveType),
           });
         }
       }
@@ -337,76 +390,292 @@ exports.deleteLeaveRequestForAdmin = catchAsync(async (req, res) => {
 
 
 exports.getAllEmployeeLeaveRequests = catchAsync(async (req, res) => {
-  const { employeeName, month, year, status } = req.query;
-  let searchMonth;
-  let nextMonth;
-  let filter = {};
+  const { employeeName, month, year, status, page, limit, search } = req.query;
+  let matchFilter = {};
 
-  // Check if year and month are provided and have a valid format
-  if (year && month && moment(`${year}-${month}`, 'YYYY-M').isValid()) {
-    searchMonth = moment(`${year}-${month}`, 'YYYY-M').toDate();
-    nextMonth = moment(searchMonth).add(1, 'month').toDate(); // Move to the next month
+  // Month/year filter (overlap check)
+  if (year && month && moment(`${year}-${month}`, "YYYY-M").isValid()) {
+    const startOfMonth = moment(`${year}-${month}`, "YYYY-M").startOf("month").toDate();
+    const endOfMonth = moment(startOfMonth).endOf("month").toDate();
 
-    // Add filtering based on fromDate and toDate if year and month are provided
-    filter.fromDate = { $gte: searchMonth, $lt: nextMonth };
+    matchFilter.$or = [
+      { fromDate: { $lte: endOfMonth }, toDate: { $gte: startOfMonth } }
+    ];
   }
 
-  // Check if employeeName is provided and add it to the filter
-  if (employeeName) {
-    filter.employeeName = employeeName;
+  // Search filter (employee name, email, or reason)
+  if (search) {
+    matchFilter.$or = [
+      { employeeName: { $regex: search, $options: "i" } },
+      { reason: { $regex: search, $options: "i" } }
+    ];
   }
 
+  // Employee name filter (partial match) - keep for backward compatibility
+  if (employeeName && !search) {
+    matchFilter.employeeName = { $regex: employeeName, $options: "i" };
+  }
+
+  // Status filter
   if (status) {
-    filter.status = status;
+    matchFilter.status = status;
   }
 
-  // Pagination options
-  const page = parseInt(req.query.page) || 1;
-  const pageSize = parseInt(req.query.pageSize) || 50;
+  // Pagination
+  const pageNumber = parseInt(page) || 1;
+  const pageSize = parseInt(limit) || 10;
 
   try {
-    let totalLeavesCount = await leavesModel.countDocuments(filter);
+    const totalLeavesCount = await leavesModel.countDocuments(matchFilter);
 
-    // Use aggregation for custom sorting
     const leaves = await leavesModel.aggregate([
-      { $match: filter },
+      { $match: matchFilter },
       {
         $addFields: {
           sortOrder: {
             $switch: {
               branches: [
-                { case: { $eq: ['$status', 'pending'] }, then: 1 },
-                { case: { $eq: ['$status', 'approved'] }, then: 2 },
-                { case: { $eq: ['$status', 'rejected'] }, then: 3 },
-                { case: { $eq: ['$status', 'unapproved'] }, then: 4 },
+                { case: { $eq: ["$status", "pending"] }, then: 1 },
+                { case: { $eq: ["$status", "approved"] }, then: 2 },
+                { case: { $eq: ["$status", "rejected"] }, then: 3 },
+                { case: { $eq: ["$status", "unapproved"] }, then: 4 },
               ],
-              default: 5, // Default case for unexpected values
+              default: 5,
             },
           },
         },
       },
-      { $sort: { sortOrder: 1, fromDate: -1 } }, // Sort by status priority, then fromDate descending
-      { $skip: (page - 1) * pageSize },
+      { $sort: { sortOrder: 1, fromDate: -1 } },
+      { $skip: (pageNumber - 1) * pageSize },
       { $limit: pageSize },
-      { $project: { sortOrder: 0 } }, // Remove temporary sort field
+
+      // Populate replacement with only name, email, and profile_image
+      {
+        $lookup: {
+          from: "users",
+          let: { empId: "$employeeId" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$_id", "$$empId"] } } },
+            { $project: { name: 1, email: 1, profile_image: 1, _id: 0 } }
+          ],
+          as: "employeeDetails"
+        }
+      },
+      { $unwind: "$employeeDetails" },
+
+      { $project: { sortOrder: 0 } }
     ]);
 
-    // Modify the response to include managerApprovalPending logic
     const updatedLeaves = leaves.map((leave) => ({
       ...leave,
-      managerApprovalPending:
-        leave.managerId && leave.managerStatus === 'pending',
+      managerApprovalPending: leave.managerId && leave.managerStatus === "pending"
     }));
 
     res.json({
       data: updatedLeaves,
-      currentPage: page,
+      currentPage: pageNumber,
       totalPages: Math.ceil(totalLeavesCount / pageSize),
+      totalItems: totalLeavesCount,
+      hasNextPage: pageNumber < Math.ceil(totalLeavesCount / pageSize),
+      hasPrevPage: pageNumber > 1,
+      message: "Leave requests retrieved successfully",
+      status: "success"
     });
   } catch (err) {
+    console.error(err);
     res.status(500).json({ message: err.message });
   }
 });
+
+exports.getLeaveStatus = catchAsync(async (req, res) => {
+  const { employeeName, month, year, status, page, limit, search } = req.query;
+  let matchFilter = {};
+
+  // Month/year filter (overlap check)
+  if (year && month && moment(`${year}-${month}`, "YYYY-M").isValid()) {
+    const startOfMonth = moment(`${year}-${month}`, "YYYY-M").startOf("month").toDate();
+    const endOfMonth = moment(startOfMonth).endOf("month").toDate();
+
+    matchFilter.$or = [
+      { fromDate: { $lte: endOfMonth }, toDate: { $gte: startOfMonth } }
+    ];
+  }
+
+  // Search filter (employee name, email, or reason)
+  if (search) {
+    matchFilter.$or = [
+      { employeeName: { $regex: search, $options: "i" } },
+      { reason: { $regex: search, $options: "i" } }
+    ];
+  }
+
+  // Employee name filter (partial match) - keep for backward compatibility
+  if (employeeName && !search) {
+    matchFilter.employeeName = { $regex: employeeName, $options: "i" };
+  }
+
+  // Status filter - only approved or rejected
+  matchFilter.status = { $in: ['approved', 'rejected'] };
+
+  // Pagination
+  const pageNumber = parseInt(page) || 1;
+  const pageSize = parseInt(limit) || 10;
+
+  try {
+    // Get today's date for statistics
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    // 1. Get approved/rejected leave requests with pagination
+    const totalLeavesCount = await leavesModel.countDocuments(matchFilter);
+
+    const leaves = await leavesModel.aggregate([
+      { $match: matchFilter },
+      {
+        $addFields: {
+          sortOrder: {
+            $switch: {
+              branches: [
+                { case: { $eq: ["$status", "approved"] }, then: 1 },
+                { case: { $eq: ["$status", "rejected"] }, then: 2 },
+              ],
+              default: 3,
+            },
+          },
+        },
+      },
+      { $sort: { sortOrder: 1, fromDate: -1 } },
+      { $skip: (pageNumber - 1) * pageSize },
+      { $limit: pageSize },
+
+      // Populate replacement with only name, email, and profile_image
+      {
+        $lookup: {
+          from: "users",
+          let: { empId: "$employeeId" },
+          pipeline: [
+            { $match: { $expr: { $eq: ["$_id", "$$empId"] } } },
+            { $project: { name: 1, email: 1, profile_image: 1, _id: 0 } }
+          ],
+          as: "employeeDetails"
+        }
+      },
+      { $unwind: "$employeeDetails" },
+
+      { $project: { sortOrder: 0 } }
+    ]);
+
+    console.log(leaves);
+    
+
+    const updatedLeaves = leaves.map((leave) => ({
+      ...leave,
+      managerApprovalPending: leave.managerId && leave.managerStatus === "pending"
+    }));
+
+    // 2. Calculate employees on leave today (approved status and today is between fromDate and toDate)
+    const employeesOnLeaveToday = await leavesModel.countDocuments({
+      status: 'approved',
+      fromDate: { $lte: tomorrow },
+      toDate: { $gte: today }
+    });
+
+    // 3. Calculate employees on half day today (approved status, halfDay: true, and today is between fromDate and toDate)
+    const employeesOnHalfDayToday = await leavesModel.countDocuments({
+      status: 'approved',
+      halfDay: true,
+      fromDate: { $lte: tomorrow },
+      toDate: { $gte: today }
+    });
+
+    // 4. Calculate employees on unapproved leave (pending/rejected status and no attendance check-in today)
+    // First get employees with pending/rejected leave requests
+    const unapprovedLeaveEmployees = await leavesModel.distinct('employeeId', {
+      status: { $in: ['pending', 'rejected'] },
+      fromDate: { $lte: tomorrow },
+      toDate: { $gte: today }
+    });
+
+    // Then check which of these employees have no attendance check-in today
+    const employeesOnUnapprovedLeave = await attendanceModel.countDocuments({
+      employeeId: { $in: unapprovedLeaveEmployees },
+      date: {
+        $gte: today,
+        $lt: tomorrow
+      },
+      checkIn: { $exists: false }
+    });
+
+    res.json({
+      data: updatedLeaves,
+      currentPage: pageNumber,
+      totalPages: Math.ceil(totalLeavesCount / pageSize),
+      totalItems: totalLeavesCount,
+      hasNextPage: pageNumber < Math.ceil(totalLeavesCount / pageSize),
+      hasPrevPage: pageNumber > 1,
+      message: "Leave status retrieved successfully",
+      status: "success",
+      statistics: {
+        "Employee-on-leave": employeesOnLeaveToday,
+        "employee-on-half-day": employeesOnHalfDayToday,
+        "employee-on-unapproved-leave": employeesOnUnapprovedLeave
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: err.message });
+  }
+});
+
+exports.getLeaveSummaryById = catchAsync(async (req, res) => {
+  try {
+    // You can pass id either from params OR query
+    const id = req.params.id || req.query.id;
+
+    if (!id) {
+      return res.status(400).json({
+        status: "fail",
+        message: "Employee ID is required",
+      });
+    }
+
+    // Pagination params
+    const pageNumber = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    const pageSize = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+
+    const filter = { employeeId: id };
+
+    // Total count for this employee
+    const totalItems = await leavesModel.countDocuments(filter);
+
+    // Fetch paginated leave requests for the employee
+    const leaveRequests = await leavesModel
+      .find(filter)
+      .sort({ createdAt: -1 }) // newest first
+      .skip((pageNumber - 1) * pageSize)
+      .limit(pageSize)
+      .populate("employeeId", "name email profile_image"); // only add name, email, profile_image
+
+    res.status(200).json({
+      status: "success",
+      message: "Leave requests retrieved successfully",
+      data: leaveRequests,
+      currentPage: pageNumber,
+      totalPages: Math.ceil(totalItems / pageSize) || 1,
+      totalItems,
+      hasNextPage: pageNumber < Math.ceil(totalItems / pageSize),
+      hasPrevPage: pageNumber > 1,
+      pageSize,
+    });
+  } catch (err) {
+    console.error("❌ Error in getLeaveSummaryById:", err);
+    res.status(500).json({ status: "error", message: err.message });
+  }
+});
+
+
 
 
 // Update the leave request
@@ -459,14 +728,24 @@ exports.updateLeaveRequestAdmin = catchAsync(async (req, res, next) => {
       return acc;
     }, {});
 
-    // Validate leave balance for each type
+    // Separate paid leaves and LWP leaves
+    const paidLeaveTypes = ['casual', 'personal', 'medical'];
+    const paidLeaveCounts = {};
+    let lwpCount = 0;
+
+    // Calculate paid leaves and LWP
     for (const [leaveType, count] of Object.entries(leaveTypeCounts)) {
-      if (
-        (leaveType === 'casual' && employeeLeaveBalance.casualLeave < count) ||
-        (leaveType === 'personal' &&
-          employeeLeaveBalance.personalLeave < count) ||
-        (leaveType === 'medical' && employeeLeaveBalance.medicalLeave < count)
-      ) {
+      if (paidLeaveTypes.includes(leaveType)) {
+        paidLeaveCounts[leaveType] = count;
+      } else {
+        // For any other leave type, count as LWP
+        lwpCount += count;
+      }
+    }
+
+    // Validate leave balance for paid leave types
+    for (const [leaveType, count] of Object.entries(paidLeaveCounts)) {
+      if (employeeLeaveBalance[`${leaveType}Leave`] < count) {
         return next(
           new AppError(
             `Insufficient ${leaveType} leave balance. Requested: ${count}, Available: ${
@@ -478,8 +757,8 @@ exports.updateLeaveRequestAdmin = catchAsync(async (req, res, next) => {
       }
     }
 
-    // Deduct leave balance for each type
-    for (const [leaveType, count] of Object.entries(leaveTypeCounts)) {
+    // Deduct paid leave balance for each type
+    for (const [leaveType, count] of Object.entries(paidLeaveCounts)) {
       if (leaveType === 'casual') {
         employeeLeaveBalance.casualLeave -= count;
       } else if (leaveType === 'personal') {
@@ -487,6 +766,11 @@ exports.updateLeaveRequestAdmin = catchAsync(async (req, res, next) => {
       } else if (leaveType === 'medical') {
         employeeLeaveBalance.medicalLeave -= count;
       }
+    }
+
+    // Add LWP count to track leave without pay days
+    if (lwpCount > 0) {
+      employeeLeaveBalance.LWP = (employeeLeaveBalance.LWP || 0) + lwpCount;
     }
 
     // Save the updated leave balance
@@ -503,6 +787,12 @@ exports.updateLeaveRequestAdmin = catchAsync(async (req, res, next) => {
     res.status(200).json({
       message: 'Leave request updated successfully',
       data: leaveRequest,
+      updatedLeaveBalance: {
+        casualLeave: employeeLeaveBalance.casualLeave,
+        personalLeave: employeeLeaveBalance.personalLeave,
+        medicalLeave: employeeLeaveBalance.medicalLeave,
+        LWP: employeeLeaveBalance.LWP
+      }
     });
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -529,24 +819,37 @@ exports.leaveRequestActionAdmin = catchAsync(async (req, res, next) => {
         return next(new AppError('Employee leave balance not found!', 404));
       }
 
-      // Aggregate requested leave counts by type
+      // Aggregate requested leave counts by type, considering halfDay
       const leaveTypeCounts = leaveRequest.leaveDetails.reduce(
         (acc, detail) => {
-          acc[detail.leaveType] = (acc[detail.leaveType] || 0) + 1;
+          if (detail.halfDay) {
+            acc[detail.leaveType] = (acc[detail.leaveType] || 0) + 0.5;
+          } else {
+            acc[detail.leaveType] = (acc[detail.leaveType] || 0) + 1;
+          }
           return acc;
         },
         {}
       );
 
-      // Validate leave balance for each type
+      // Separate paid leaves and LWP leaves
+      const paidLeaveTypes = ['casual', 'personal', 'medical'];
+      const paidLeaveCounts = {};
+      let lwpCount = 0;
+
+      // Calculate paid leaves and LWP
       for (const [leaveType, count] of Object.entries(leaveTypeCounts)) {
-        if (
-          (leaveType === 'casual' &&
-            employeeLeaveBalance.casualLeave < count) ||
-          (leaveType === 'personal' &&
-            employeeLeaveBalance.personalLeave < count) ||
-          (leaveType === 'medical' && employeeLeaveBalance.medicalLeave < count)
-        ) {
+        if (paidLeaveTypes.includes(leaveType)) {
+          paidLeaveCounts[leaveType] = count;
+        } else {
+          // For any other leave type, count as LWP
+          lwpCount += count;
+        }
+      }
+
+      // Validate leave balance for paid leave types
+      for (const [leaveType, count] of Object.entries(paidLeaveCounts)) {
+        if (employeeLeaveBalance[`${leaveType}Leave`] < count) {
           return next(
             new AppError(
               `Insufficient ${leaveType} leave balance. Requested: ${count}, Available: ${
@@ -558,8 +861,8 @@ exports.leaveRequestActionAdmin = catchAsync(async (req, res, next) => {
         }
       }
 
-      // Deduct leave balance for each type
-      for (const [leaveType, count] of Object.entries(leaveTypeCounts)) {
+      // Deduct paid leave balance for each type
+      for (const [leaveType, count] of Object.entries(paidLeaveCounts)) {
         if (leaveType === 'casual') {
           employeeLeaveBalance.casualLeave -= count;
         } else if (leaveType === 'personal') {
@@ -567,6 +870,11 @@ exports.leaveRequestActionAdmin = catchAsync(async (req, res, next) => {
         } else if (leaveType === 'medical') {
           employeeLeaveBalance.medicalLeave -= count;
         }
+      }
+
+      // Add LWP count to track leave without pay days
+      if (lwpCount > 0) {
+        employeeLeaveBalance.LWP = (employeeLeaveBalance.LWP || 0) + lwpCount;
       }
 
       // Save the updated leave balance
@@ -591,6 +899,12 @@ exports.leaveRequestActionAdmin = catchAsync(async (req, res, next) => {
       res.status(200).json({
         message: 'Leave request approved successfully',
         data: leaveRequest,
+        updatedLeaveBalance: {
+          casualLeave: employeeLeaveBalance.casualLeave,
+          personalLeave: employeeLeaveBalance.personalLeave,
+          medicalLeave: employeeLeaveBalance.medicalLeave,
+          LWP: employeeLeaveBalance.LWP
+        }
       });
     } else if (action === 'reject') {
       // Set the status to 'rejected'
@@ -792,13 +1106,20 @@ exports.getSingleEmployeeLeaveRequestAdmin = catchAsync(
       })
       .populate({
         path: 'comments.commentBy',
-        select: 'name email profile_image',
+        select: 'name email role profile_image',
       });
 
     // If no leave data found, return an error
     if (!employeeLeaveData) {
       return next(
         new AppError('No leave request found for this employee', 404)
+      );
+    }
+
+    // Check if employee data is properly populated
+    if (!employeeLeaveData.employeeId) {
+      return next(
+        new AppError('Employee data not found', 404)
       );
     }
 
@@ -897,6 +1218,28 @@ exports.getSingleEmployeeLeaveRequestAdmin = catchAsync(
       });
     });
 
+    const leaveBalance = await employedLeave.findOne({ employeeId: employeeLeaveData.employeeId._id });
+
+    // Log the leave balance for debugging
+    console.log('Leave Balance Query:', { 
+      employeeId: employeeLeaveData.employeeId._id,
+      leaveBalance: leaveBalance 
+    });
+
+    // If no leave balance found, create a default structure
+    const defaultLeaveBalance = {
+      // canonical keys used in frontend
+      casualLeave: 0,
+      personalLeave: 0,
+      medicalLeave: 0,
+      LWP: 0,
+      total: 0,
+      // alternate keys for compatibility
+      casual: 0,
+      personal: 0,
+      medical: 0,
+    };
+
     // Send the response with the monthly and yearly leave counts
     res.json({
       status: 'success',
@@ -904,10 +1247,45 @@ exports.getSingleEmployeeLeaveRequestAdmin = catchAsync(
         employeeLeaveData,
         leaveCountMonth,
         leaveCountYear,
+        leaveBalance: leaveBalance || defaultLeaveBalance,
       },
     });
   }
 );
+
+// Add a comment on a leave request (Admin/HR/Management/TeamLead)
+exports.addLeaveRequestComment = catchAsync(async (req, res, next) => {
+  const { id } = req.params;
+  const { commentText } = req.body;
+
+  if (!commentText || !commentText.trim()) {
+    return next(new AppError('Comment text is required', 400));
+  }
+
+  const leaveRequest = await leavesModel.findById(id);
+  if (!leaveRequest) {
+    return next(new AppError('Leave request not found', 404));
+  }
+
+  leaveRequest.comments.push({
+    commentBy: req.user.id,
+    role: req.user.role,
+    commentText: commentText.trim(),
+    commentDate: new Date(),
+  });
+
+  await leaveRequest.save();
+
+  const updated = await leavesModel
+    .findById(id)
+    .populate({ path: 'comments.commentBy', select: 'name email role profile_image' });
+
+  res.status(201).json({
+    status: 'success',
+    message: 'Comment added successfully',
+    data: updated,
+  });
+});
 
 exports.getEmployeeLeaveDetailsOfMonthAndYear = catchAsync(
   async (req, res, next) => {

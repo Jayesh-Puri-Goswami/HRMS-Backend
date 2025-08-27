@@ -9,5 +9,7 @@ router.use(authController.protect);
 router.get('/getAll/employees/padiLeaves', authController.restrictTo('Admin','HR'), Controller.getAllEmployeePaidLeave);
 router.get('/get/employees/paidLeaves/:id', authController.restrictTo('Admin','HR'), Controller.getEmployeePaidLeaveById);
 router.post('/update/padi-Leave/:id', authController.restrictTo('Admin','HR'), Controller.updateEmployeePaidLeaveById);
+router.post('/create/employee-leave-balance', authController.restrictTo('Admin','HR'), Controller.createEmployeeLeaveBalance);
+router.patch('/reset-lwp/:employeeId', authController.restrictTo('Admin','HR'), Controller.resetLWPCount);
 
 module.exports = router;

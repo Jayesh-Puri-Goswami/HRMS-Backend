@@ -10,6 +10,7 @@ const agreementRouter = require('./admin/agreement.router');
 const holidayRouter = require('./admin/holiday.router');
 const complainRouter = require('./admin/complain.router');
 const eventRouter = require('./admin/event.router')
+const attendanceRouter = require('./admin/attendance.router');
 const router = express.Router();
 
 router.use(
@@ -24,7 +25,8 @@ router.use(
   agreementRouter,
   holidayRouter,
   eventRouter,
-  complainRouter
+  complainRouter,
+  attendanceRouter
 );
 
 module.exports = router;

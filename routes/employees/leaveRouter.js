@@ -13,6 +13,12 @@ router.get('/get/leave-request/:id', LeaveController.getLeaveRequestById);
 
 router.get('/get/employees/paidLeaves/:id', authController.restrictTo('HR','Employee', 'Management','TeamLead'), Controller.getEmployeePaidLeaveById);
 
+router.get(
+  '/getSingleEmployeeLeaveRequest/:id',
+  authController.restrictTo('Employee', 'Management','TeamLead','HR','Admin'),
+  LeaveController.getSingleEmployeeLeaveRequestAdmin
+);
+
 router.post(
   '/create/leave-request',
   authController.restrictTo('Employee', 'Management','TeamLead'),

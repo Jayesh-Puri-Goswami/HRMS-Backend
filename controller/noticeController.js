@@ -13,13 +13,26 @@ const fs = require('fs');
 const User = require('../model/admin.model')
 
 exports.createNotice = catchAsync(async (req, res, next) => {
-  const { title, content } = req.body;
+  const { title, content, priority } = req.body;
+
+  // Debug logging
+  console.log('=== CREATE NOTICE DEBUG ===');
+  console.log('Request body:', req.body);
+  console.log('Destructured values:', { title, content, priority });
+  console.log('Priority type:', typeof priority);
+  console.log('Priority value:', priority);
+  console.log('========================');
 
   if (!title || !content) {
     return next(new AppError('Please provide title and content', 400));
   }
 
-  const notice = await Notice.create({ title, content });
+  const notice = await Notice.create({ title, content, priority });
+  
+  // Debug logging for created notice
+  console.log('Created notice:', notice);
+  console.log('Notice priority:', notice.priority);
+
 
   res.status(201).json({
     status: 'success',
@@ -38,7 +51,7 @@ exports.updateNotice = catchAsync(async (req, res, next) => {
 
   const updatedNotice = await Notice.findByIdAndUpdate(
     id,
-    { title, content },
+    { title, content, priority },
     { new: true, runValidators: true }
   );
 

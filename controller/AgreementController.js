@@ -208,7 +208,7 @@ exports.deleteAgreement = catchAsync(async (req, res, next) => {
 
 
 exports.getEmployeeAllAgreement = catchAsync(async (req, res, next) => {
-  const employeeId = req.user.id;
+  const employeeId = req.params.id || req.user.id;
 
   if (!employeeId || !mongoose.Types.ObjectId.isValid(employeeId)) {
     return next(new AppError('Invalid or missing employeeId', 400));
@@ -217,7 +217,7 @@ exports.getEmployeeAllAgreement = catchAsync(async (req, res, next) => {
   try {
     const agreements = await EmployeeAgreement.find({ employeeId })
       .sort({ createdAt: -1 })
-      .populate('employeeId');
+      .populate('employeeId')
 
     res.status(200).json({
       status: 'success',

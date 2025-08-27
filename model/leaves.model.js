@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+ const mongoose = require('mongoose');
 
 const leaveSchema = new mongoose.Schema(
   {
@@ -8,6 +8,11 @@ const leaveSchema = new mongoose.Schema(
       required: true,
     },
     employeeName: String,
+    employeeLeaveType: {
+      type: String,
+      enum: ['casual', 'personal', 'medical', 'LWP', 'none'],
+      default: 'none',
+    },
     applyDate: {
       type: Date,
       required: true,
@@ -66,6 +71,7 @@ const leaveSchema = new mongoose.Schema(
           type: mongoose.Schema.Types.ObjectId,
           ref: 'User',
         },
+        role: { type: String, default: null },
         commentText: { type: String },
         commentDate: { type: Date, default: Date.now },
       },

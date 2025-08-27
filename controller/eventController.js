@@ -30,7 +30,7 @@ exports.createEvent = catchAsync(async (req, res, next) => {
   const creatorRole = creator.role; // assuming you store it like this
   const allowedRoles = {
     Admin: ['Admin', 'HR', 'Management', 'TeamLead', 'Employee'],
-    HR: ['Admin','HR', 'Management', 'TeamLead', 'Employee'],
+    HR: ['Admin', 'HR', 'Management', 'TeamLead', 'Employee'],
     Management: ['Management', 'TeamLead', 'Employee'],
     TeamLead: ['TeamLead', 'Management', 'Employee'],
   };
@@ -60,7 +60,7 @@ exports.createEvent = catchAsync(async (req, res, next) => {
     createdBy: creator._id,
     participants,
     link,
-    isActive : isActive ? isActive : true
+    isActive: isActive ? isActive : true,
   });
 
   // Send Notifications
@@ -105,13 +105,34 @@ exports.getMyEvents = catchAsync(async (req, res, next) => {
   });
 });
 
+exports.getMyUpcomingEvents = catchAsync(async (req, res, next) => {
+	const userId = req.user._id;
+	const now = new Date();
+	
+	const events = await Event.find({
+		$and: [
+			{ $or: [{ createdBy: userId }, { participants: userId }] },
+			{ eventDate: { $gte: now } },
+		],
+	})
+		.populate('createdBy', 'name role email')
+		.populate('participants', 'name role email')
+		.sort({ eventDate: 1 });
+
+	res.status(200).json({
+		status: 'success',
+		results: events.length,
+		data: events,
+	});
+});
+
 //   Update the event
 
 exports.updateEvent = catchAsync(async (req, res, next) => {
   const { id } = req.params;
-  
+
   console.log(id);
-  
+
   const {
     title,
     description,
@@ -121,7 +142,7 @@ exports.updateEvent = catchAsync(async (req, res, next) => {
     venue,
     participants,
     link,
-    isActive
+    isActive,
   } = req.body;
 
   const event = await Event.findById(id);

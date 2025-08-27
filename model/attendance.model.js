@@ -13,7 +13,7 @@ const attendanceSchema = new mongoose.Schema(
     checkOutTime: Date,
     totalHours: String,
     totalMinutes: { type: Number, default: 0 },
-    leaveStatus: { type: String },
+    leaveStatus: { type: String, default: null },
     pauses: [
       {
         pauseTime: Date,
@@ -37,7 +37,7 @@ const attendanceSchema = new mongoose.Schema(
     shiftEndTime: { type: String, default: null },
     shiftLunchTime: { type: Number, default: 0 },
     shiftBreakTime: { type: Number, default: 0 },
-    status: { type: String, default: 'absent' },
+    status: { type: String, default: null},
   },
   { timestamps: true }
 );

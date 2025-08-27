@@ -11,6 +11,11 @@ const NoticeSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    priority:{
+      type: String,
+      enum: ['low', 'medium', 'high'],
+      default: 'medium',
+    },
     readBy: [
       {
         type: mongoose.Schema.Types.ObjectId,

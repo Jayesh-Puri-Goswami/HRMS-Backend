@@ -8,7 +8,7 @@ const router = express.Router();
 
 router.use(authController.protect);
 
-router.get('/dashboard/getEmployeeDashboard',authController.restrictTo('Employee','Management','TeamLead'), dashboardController.getEmployeeData)
+router.get('/dashboard/getEmployeeDashboard',authController.restrictTo('HR','Employee','Management','TeamLead'), dashboardController.getEmployeeData)
 
 
 router.get('/getEmployeeByUser',authController.restrictTo('Employee','Management','TeamLead'),dashboardController.getEmployeeByRole)

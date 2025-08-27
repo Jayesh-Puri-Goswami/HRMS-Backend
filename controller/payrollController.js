@@ -276,9 +276,6 @@ exports.generateEmployeeSalary = catchAsync(async (req, res, next) => {
   });
 
   if (existsPayroll) {
-    console.log(
-      `Skipping ${existsPayroll.employeeName}: Payroll already generated for ${salaryMonth} ${salaryYear}`
-    );
     return res
       .status(400)
       .json({
@@ -312,9 +309,6 @@ exports.generateEmployeeSalary = catchAsync(async (req, res, next) => {
       employeeId: employee._id,
       status: 'approved',
     });
-
-    console.log(leaveRequests);
-
     // Initialize totalLeaveDays and totalLeaveDaysDeduction
     let totalLeaveDays = 0;
     let totalLeaveDaysDeduction = 0;
@@ -453,7 +447,7 @@ exports.getEmployeeSalary = catchAsync(async (req, res, next) => {
 
   try {
     const totalItems = await Payroll.countDocuments(query);
-    const payrollData = await Payroll.find(query).skip(skip).limit(size);
+    const payrollData = await Payroll.find(query).sort({ employeeName: 1 }).skip(skip).limit(size);
 
     return res.status(200).json({
       message: 'Payroll data retrieved successfully',
@@ -469,21 +463,159 @@ exports.getEmployeeSalary = catchAsync(async (req, res, next) => {
   }
 });
 
-exports.getEmployeeGeneratedSalaryById = catchAsync(async (req, res) => {
+exports.getEmployeeGeneratedSalaryById = catchAsync(async (req, res, next) => {
+
   const Id = req.params.id;
-
+  
   try {
-    // const Data = await Payroll.findOne({ _id: Id });
-
-    const Data = await Payroll.findOne({ _id: Id }).populate('employeeId');
-
-    if (!Data) {
+    const payrollDoc = await Payroll.findOne({ _id: Id }).populate('employeeId');
+    if (!payrollDoc) {
       return res.status(404).json({ message: 'Data not found.' });
     }
 
-    res.json(Data);
+    const employeeId = payrollDoc.employeeId?._id || payrollDoc.employeeId;
+    const month = payrollDoc.salaryMonth;
+    const year = payrollDoc.salaryYear;
+
+    // Fetch leave summary for the given employee/month/year
+    let leaveSummary = null;
+    try {
+      const leaveController = require('./leaveController');
+      if (leaveController && typeof leaveController.getEmployeeLeaveDetailsOfMonthAndYear === 'function') {
+        // Call underlying logic directly via model to avoid express 'req/res' dependency
+        // Reuse their logic by querying leaves model similarly here
+        const leavesModel = require('../model/leaves.model');
+        // Compute month bounds similar to leaveController
+        const monthIndex = new Date(Date.parse(month + ' 1, ' + year)).getMonth();
+        const startOfMonth = new Date(year, monthIndex, 1);
+        const endOfMonth = new Date(year, monthIndex + 1, 0);
+
+        // Get all approved leaves for this employee
+        const allApprovedLeaves = await leavesModel.find({
+          employeeId: employeeId,
+          status: 'approved',
+        });
+
+        const leaveCountMonth = { month, casual: 0, personal: 0, medical: 0, LWP: 0 };
+        
+        // Filter leave details by actual leave dates that fall in the salary month
+        allApprovedLeaves.forEach((leave) => {
+          leave.leaveDetails.forEach((leaveDetail) => {
+            const leaveDate = new Date(leaveDetail.date);
+            // Check if this specific leave date falls within the salary month
+            if (leaveDate >= startOfMonth && leaveDate <= endOfMonth) {
+              if (['casual', 'personal', 'medical', 'LWP'].includes(leaveDetail.leaveType)) {
+                if (leaveDetail.halfDay) leaveCountMonth[leaveDetail.leaveType] += 0.5;
+                else leaveCountMonth[leaveDetail.leaveType] += 1;
+              }
+            }
+          });
+        });
+
+        // Financial year (April to March)
+        const currentDate = new Date();
+        let financialYearStart, financialYearEnd;
+        if (currentDate.getMonth() >= 3) {
+          financialYearStart = new Date(currentDate.getFullYear(), 3, 1);
+          financialYearEnd = new Date(currentDate.getFullYear() + 1, 2, 31);
+        } else {
+          financialYearStart = new Date(currentDate.getFullYear() - 1, 3, 1);
+          financialYearEnd = new Date(currentDate.getFullYear(), 2, 31);
+        }
+
+        const leaveCountYear = { year, casual: 0, personal: 0, medical: 0, LWP: 0 };
+        
+        // Filter leave details by actual leave dates that fall in the financial year
+        allApprovedLeaves.forEach((leave) => {
+          leave.leaveDetails.forEach((leaveDetail) => {
+            const leaveDate = new Date(leaveDetail.date);
+            // Check if this specific leave date falls within the financial year
+            if (leaveDate >= financialYearStart && leaveDate <= financialYearEnd) {
+              if (['casual', 'personal', 'medical', 'LWP'].includes(leaveDetail.leaveType)) {
+                if (leaveDetail.halfDay) leaveCountYear[leaveDetail.leaveType] += 0.5;
+                else leaveCountYear[leaveDetail.leaveType] += 1;
+              }
+            }
+          });
+        });
+
+        leaveSummary = { leaveCountMonth, leaveCountYear };
+      }
+    } catch (e) {
+      // Non-fatal: keep leaveSummary null if any error
+      leaveSummary = null;
+    }
+
+    // Fetch attendance summary for the payslip's month/year
+    let attendanceSummary = null;
+    try {
+      const AttendanceModel = require('../model/attendance.model');
+      const moment = require('moment-timezone');
+      const TZ = 'Asia/Kolkata';
+      const monthIndexForAttendance = new Date(Date.parse(month + ' 1, ' + year)).getMonth();
+      const startOfMonth = moment.tz({ year: Number(year), month: monthIndexForAttendance, day: 1 }, TZ)
+        .startOf('month')
+        .startOf('day')
+        .toDate();
+      const endOfMonth = moment(startOfMonth).tz(TZ).endOf('month').endOf('day').toDate();
+
+      const attendanceRecords = await AttendanceModel.find({
+        employeeId: employeeId,
+        date: { $gte: startOfMonth, $lte: endOfMonth },
+      });
+
+      const attendanceByDate = {};
+      attendanceRecords.forEach((record) => {
+        const dateKey = moment(record.date).tz(TZ).format('YYYY-MM-DD');
+        attendanceByDate[dateKey] = record.status;
+      });
+
+      const totalWorkingDays = [];
+      let current = moment(startOfMonth).tz(TZ);
+      while (current <= moment(endOfMonth).tz(TZ)) {
+        const day = current.day();
+        if (day !== 0 && day !== 6) {
+          totalWorkingDays.push(current.format('YYYY-MM-DD'));
+        }
+        current = current.add(1, 'day');
+      }
+
+      let presentCount = 0;
+      let absentCount = 0;
+      let lateCount = 0;
+      let notInOfficeCount = 0;
+      let leaveCount = 0;
+      let halfDayCount = 0;
+      totalWorkingDays.forEach((date) => {
+        if (attendanceByDate[date] === 'present') presentCount++;
+        else if (attendanceByDate[date] === 'absent') absentCount++;
+        else if (attendanceByDate[date] === 'late') lateCount++;
+        else if (attendanceByDate[date] === 'not_in_office') notInOfficeCount++;
+        else if (attendanceByDate[date] === 'leave') leaveCount++;
+        else if (attendanceByDate[date] === 'halfDay') halfDayCount++;
+      });
+
+      attendanceSummary = {
+        employeeId,
+        totalWorkingDays: totalWorkingDays.length,
+        present: presentCount,
+        absent: absentCount,
+        late: lateCount,
+        notInOffice: notInOfficeCount,
+        leave: leaveCount,
+        halfDay: halfDayCount,
+      };
+    } catch (e) {
+      attendanceSummary = null;
+    }
+
+    return res.json({
+      ...payrollDoc.toObject(),
+      leaveSummary,
+      attendanceSummary,
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 });
 
@@ -540,6 +672,47 @@ exports.updateGeneratedSalary = catchAsync(async (req, res, next) => {
   } catch (err) {
     console.error(err);
     return next(new AppError('Error updating salary data', 401));
+  }
+});
+
+exports.getEmployeeSalaryById = catchAsync(async (req, res, next) => {
+  const { year, month, page, pageSize } = req.query;
+  const employeeId = req.params.id || req.query.id;
+  const pageNum = parseInt(page) || 1;
+  const size = parseInt(pageSize) || 100;
+  const skip = (pageNum - 1) * size;
+
+  if (!employeeId) {
+    return res.status(400).json({ message: 'Employee ID is required' });
+  }
+
+  const salaryMonth = month || moment().format('MMMM');
+  const salaryYear = year || moment().year();
+
+  const query = {
+    employeeId: employeeId,
+    salaryYear: salaryYear,
+    salaryMonth: salaryMonth,
+  };
+
+  // Remove month/year from query if not provided
+  if (!month) delete query.salaryMonth;
+  if (!year) delete query.salaryYear;
+
+  try {
+    const totalItems = await Payroll.countDocuments(query);
+    const payrollData = await Payroll.find(query).skip(skip).limit(size);
+    return res.status(200).json({
+      message: 'Payroll data retrieved successfully',
+      payrollData,
+      pageNum,
+      totalItems,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: 'Error retrieving payroll data',
+      error: error.message,
+    });
   }
 });
 

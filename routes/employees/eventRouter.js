@@ -14,8 +14,14 @@ router.post(
 
 router.get(
   '/Event/getAll',
-  authController.restrictTo('Management', 'TeamLead','Employee'),
+  authController.restrictTo('Management', 'TeamLead','Employee','HR'),
   eventController.getMyEvents
+);
+
+router.get(
+  '/Event/getMyUpcomingEvents',
+  authController.restrictTo('Management', 'TeamLead','Employee','HR'),
+  eventController.getMyUpcomingEvents
 );
 
 router.put(
